@@ -972,13 +972,28 @@ function insertBracket(open, close) {
   const el = $('manuscript');
   const start = el.selectionStart;
   const end = el.selectionEnd;
-  const selectedText = el.value.substring(start, end);
+  
+  // 現在のカーソル行の行頭からカーソル位置までの文字列を取得
+  const lineStart = el.value.lastIndexOf('\n', start - 1) + 1;
+  const textBeforeCursor = el.value.substring(lineStart, start);
 
+  let targetStart = start;
+  let targetEnd = end;
+  let extraOffset = 0;
+
+  // もし行頭に全角スペースがあれば、それを一緒に巻き込んで置き換える
+  if (textBeforeCursor === FULL_WIDTH_SPACE || textBeforeCursor === '') {
+    targetStart = lineStart;
+    extraOffset = FULL_WIDTH_SPACE.length;
+  }
+
+  const selectedText = el.value.substring(targetStart, targetEnd);
   const textToInsert = open + selectedText + close;
-  el.setRangeText(textToInsert, start, end, 'select');
+  
+  el.setRangeText(textToInsert, targetStart, targetEnd, 'select');
 
-  if (start === end) {
-    el.setSelectionRange(start + open.length, start + open.length);
+  if (targetStart === targetEnd) {
+    el.setSelectionRange(targetStart + open.length, targetStart + open.length);
   }
 
   update();
