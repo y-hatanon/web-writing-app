@@ -962,7 +962,20 @@ function insertSymbol(sym) {
   const el = $('manuscript');
   const start = el.selectionStart;
   const end = el.selectionEnd;
-  el.setRangeText(sym, start, end, 'end');
+  
+  // 現在のカーソル行の行頭からカーソル位置までの文字列を取得
+  const lineStart = el.value.lastIndexOf('\n', start - 1) + 1;
+  const textBeforeCursor = el.value.substring(lineStart, start);
+
+  let targetStart = start;
+  let targetEnd = end;
+
+  // 行頭に全角スペースがあれば、それを消して記号に置き換える
+  if (textBeforeCursor === FULL_WIDTH_SPACE || textBeforeCursor === '') {
+    targetStart = lineStart;
+  }
+
+  el.setRangeText(sym, targetStart, targetEnd, 'end');
   update();
   saveData();
   el.focus();
