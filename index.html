@@ -76,12 +76,30 @@ h1{margin:6px 0 2px;font-family:serif;font-size:clamp(22px,4vw,32px);font-weight
   border-radius:8px;
   transition:border-color .15s;
   gap:12px;
+  min-width:0;
 }
 .project-item:hover{border-color:var(--accent)}
-.project-info{display:grid;gap:4px;flex:1}
-.project-title-text{font-weight:600;font-size:15px;color:var(--ink)}
-.project-meta-text{font-size:12px;color:var(--muted)}
-.project-actions{display:flex;gap:8px;flex-shrink:0}
+.project-info{
+  display:grid;
+  gap:4px;
+  flex:1;
+  min-width:0;
+}
+.project-title-text{
+  font-weight:600;
+  font-size:15px;
+  color:var(--ink);
+  word-break:break-word;
+}
+.project-meta-text{
+  font-size:12px;
+  color:var(--muted);
+  line-height:1.4;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.project-actions{display:flex;gap:6px;flex-shrink:0}
 
 .empty-state{
   padding:32px 16px;text-align:center;color:var(--muted);
@@ -89,8 +107,20 @@ h1{margin:6px 0 2px;font-family:serif;font-size:clamp(22px,4vw,32px);font-weight
 }
 
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+/* モーダル内の日時入力欄用グリッドクラス */
+.datetime-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
 label{display:grid;gap:6px;font-weight:600;font-size:13px;color:#4a423d}
-input,textarea{width:100%;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);padding:10px;outline:none}
+input,textarea{
+  width:100%;
+  max-width:100%;
+  border:1px solid var(--line);
+  border-radius:6px;
+  background:#fff;
+  color:var(--ink);
+  padding:10px;
+  outline:none;
+}
 input:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(90,74,66,0.15)}
 textarea{resize:vertical;min-height:120px;line-height:1.6}
 .primary{
@@ -168,6 +198,7 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   align-items:center;
   gap:6px;
   flex:1;
+  min-width:0;
 }
 .editor-header .title-input{
   font-family:serif;
@@ -195,6 +226,18 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
 .stats-info span b{
   color:var(--ink);
   font-weight:600;
+}
+.edit-checkout-btn{
+  background:none;
+  border:none;
+  color:var(--muted);
+  font-size:11px;
+  padding:2px 4px;
+  text-decoration:underline;
+  cursor:pointer;
+}
+.edit-checkout-btn:hover{
+  color:var(--ink);
 }
 
 /* 本文入力エリア（スクロール独立） */
@@ -276,8 +319,9 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   display:flex;
   align-items:center;
   justify-content:flex-end;
-  gap:12px;
+  gap:10px;
   padding:2px 2px 0;
+  flex-wrap:wrap;
 }
 
 /* モーダル共通 */
@@ -314,20 +358,25 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   header button{width:100%}
   .setup{padding:16px 12px}
   .grid{grid-template-columns:1fr}
+  
+  /* モーダル内の日時入力欄を縦並びに */
+  .datetime-grid{grid-template-columns:1fr; gap:12px}
+
   .project-item{flex-direction:column;align-items:stretch}
   .project-actions{justify-content:flex-end;margin-top:4px}
+  .project-meta-text{font-size:11px;}
 
   .editor-container{padding:6px 8px}
   .editor-header{
-    flex-direction:column-reverse; /* 上下逆（ステータスが上、タイトルが下） */
+    flex-direction:column-reverse;
     align-items:stretch;
     gap:6px;
     padding-bottom:6px;
   }
   .editor-header .stats-info{
-    justify-content:flex-end; /* 右寄せ */
+    justify-content:flex-end;
     flex-wrap:wrap;
-    gap:6px 10px;
+    gap:4px 8px;
     font-size:11px;
     background:#ebe6de;
     padding:6px 8px;
@@ -396,7 +445,7 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
         <span>文字数: <b id="count">0</b></span>
         <span>目標: <b id="goalView">10,000</b></span>
         <span>進捗: <b id="percent">0%</b></span>
-        <span id="checkoutCountdownContainer">残り: <b id="checkoutCountdown">--:--:--</b></span>
+        <span id="checkoutCountdownContainer">残り: <b id="checkoutCountdown">--:--:--</b> <button class="edit-checkout-btn" onclick="showEditProjectModal(db.currentId)">⚙️変更</button></span>
       </div>
     </div>
 
@@ -424,6 +473,7 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
       <div class="footer-meta">
         <span>執筆時間: <span id="timer">00:00:00</span></span>
         <span id="saved">自動保存: 準備中</span>
+        <button id="togglePopupBtn" class="secondary" style="padding:3px 8px;font-size:11px;" onclick="togglePopupSetting()">🎉 達成表示: オン</button>
         <button class="secondary" style="padding:3px 8px;font-size:11px;" onclick="exportBackupData()">JSONバックアップ</button>
       </div>
     </div>
@@ -458,7 +508,7 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
       <label>目標文字数
         <input id="newGoal" type="number" min="1" step="100" value="10000">
       </label>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <div class="datetime-grid">
         <label>チェックイン日時
           <input id="newCheckIn" type="datetime-local">
         </label>
@@ -472,7 +522,7 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
     </div>
     <div style="display:flex;justify-content:flex-end;gap:8px;">
       <button class="secondary" onclick="hideNewProjectModal()">キャンセル</button>
-      <button class="primary" onclick="createNewProject()">原稿合宿を開始</button>
+      <button id="saveProjectBtn" class="primary" onclick="saveProjectModal()">原稿合宿を開始</button>
     </div>
   </div>
 </div>
@@ -493,11 +543,15 @@ const FULL_WIDTH_SPACE = '\u3000';
 
 let db = {
   currentId: null,
+  settings: {
+    showMilestonePopup: true
+  },
   projects: {}
 };
 
 let timerId, autoId;
 let isPasting = false;
+let editingProjectId = null;
 
 function $(id) { return document.getElementById(id); }
 function fmt(n) { return n.toLocaleString('ja-JP'); }
@@ -511,8 +565,11 @@ function getFormattedDate() {
 }
 
 function formatDatetimeLocal(d) {
+  if (!d) return '';
+  const dateObj = (d instanceof Date) ? d : new Date(d);
+  if (isNaN(dateObj.getTime())) return '';
   const pad = n => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${dateObj.getFullYear()}-${pad(dateObj.getMonth() + 1)}-${pad(dateObj.getDate())}T${pad(dateObj.getHours())}:${pad(dateObj.getMinutes())}`;
 }
 
 function formatDisplayDate(isoStr) {
@@ -532,8 +589,12 @@ function loadData() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       db = JSON.parse(raw);
+      if (!db.settings) {
+        db.settings = { showMilestonePopup: true };
+      }
     }
   } catch(e) {}
+  updatePopupBtnUI();
 }
 
 function saveData() {
@@ -548,6 +609,23 @@ function saveData() {
   if ($('saved')) {
     $('saved').textContent = '自動保存: ' + new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
   }
+}
+
+/* ポップアップ表示設定の切り替え */
+function togglePopupSetting() {
+  if (!db.settings) db.settings = {};
+  db.settings.showMilestonePopup = !db.settings.showMilestonePopup;
+  saveData();
+  updatePopupBtnUI();
+  toast(db.settings.showMilestonePopup ? '達成ポップアップを表示します' : '達成ポップアップを非表示にしました');
+}
+
+function updatePopupBtnUI() {
+  const btn = $('togglePopupBtn');
+  if (!btn) return;
+  const isShow = db.settings?.showMilestonePopup !== false;
+  btn.textContent = isShow ? '🎉 達成表示: オン' : '🎉 達成表示: オフ';
+  btn.style.opacity = isShow ? '1' : '0.65';
 }
 
 function renderProjectList() {
@@ -574,7 +652,7 @@ function renderProjectList() {
     if (p.checkIn || p.checkOut) {
       const inStr = p.checkIn ? formatDisplayDate(p.checkIn) : '未設定';
       const outStr = p.checkOut ? formatDisplayDate(p.checkOut) : '未設定';
-      timeStr = ` | 滞在: ${inStr} 〜 ${outStr}`;
+      timeStr = ` 滞在: ${inStr} 〜 ${outStr}`;
     }
 
     item.innerHTML = `
@@ -584,6 +662,7 @@ function renderProjectList() {
       </div>
       <div class="project-actions">
         <button class="secondary" onclick="openProject('${p.id}')">執筆部屋へ</button>
+        <button class="secondary" onclick="showEditProjectModal('${p.id}')">編集</button>
         <button class="danger" onclick="deleteProject('${p.id}')">削除</button>
       </div>
     `;
@@ -625,6 +704,7 @@ function openProject(id) {
   $('lobby').classList.add('hidden');
   $('write').classList.remove('hidden');
 
+  updatePopupBtnUI();
   update();
   saveData();
   startClocks();
@@ -641,9 +721,12 @@ function showProjectList() {
 }
 
 function showNewProjectModal() {
+  editingProjectId = null;
   const now = new Date();
   const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
+  $('modalTitle').textContent = '新規ご宿泊プランの作成';
+  $('saveProjectBtn').textContent = '原稿合宿を開始';
   $('newTitle').value = '';
   $('newGoal').value = 10000;
   $('newCheckIn').value = formatDatetimeLocal(now);
@@ -652,34 +735,75 @@ function showNewProjectModal() {
   $('newProjectOverlay').classList.remove('hidden');
 }
 
-function hideNewProjectModal() {
-  $('newProjectOverlay').classList.add('hidden');
+function showEditProjectModal(id) {
+  const p = db.projects[id];
+  if (!p) return;
+
+  editingProjectId = id;
+  $('modalTitle').textContent = 'プラン情報の編集';
+  $('saveProjectBtn').textContent = '変更内容を保存';
+  $('newTitle').value = p.title || '';
+  $('newGoal').value = p.goal || 10000;
+  $('newCheckIn').value = formatDatetimeLocal(p.checkIn);
+  $('newCheckOut').value = formatDatetimeLocal(p.checkOut);
+  $('newPlot').value = p.plot || '';
+  $('newProjectOverlay').classList.remove('hidden');
 }
 
-function createNewProject() {
+function hideNewProjectModal() {
+  $('newProjectOverlay').classList.add('hidden');
+  editingProjectId = null;
+}
+
+function saveProjectModal() {
   const title = $('newTitle').value.trim() || '無題の物語';
   const goal = Math.max(1, Number($('newGoal').value) || 10000);
   const checkIn = $('newCheckIn').value;
   const checkOut = $('newCheckOut').value;
   const plot = $('newPlot').value;
 
-  const id = 'p_' + Date.now();
-  db.projects[id] = {
-    id: id,
-    title: title,
-    goal: goal,
-    checkIn: checkIn,
-    checkOut: checkOut,
-    plot: plot,
-    text: '',
-    elapsedTime: 0,
-    lastMilestone: 0,
-    updatedAt: Date.now()
-  };
+  if (editingProjectId) {
+    // 既存プロジェクトの編集保存
+    const p = db.projects[editingProjectId];
+    p.title = title;
+    p.goal = goal;
+    p.checkIn = checkIn;
+    p.checkOut = checkOut;
+    p.plot = plot;
+    p.updatedAt = Date.now();
 
-  hideNewProjectModal();
-  openProject(id);
-  toast('チェックインしました！');
+    hideNewProjectModal();
+    saveData();
+    renderProjectList();
+
+    if (db.currentId === editingProjectId && !$('write').classList.contains('hidden')) {
+      $('roomTitle').value = p.title;
+      $('goalView').textContent = fmt(p.goal);
+      $('plotWork').value = p.plot;
+      updateTimer();
+      update();
+    }
+    toast('プラン内容を保存しました');
+  } else {
+    // 新規プロジェクト作成
+    const id = 'p_' + Date.now();
+    db.projects[id] = {
+      id: id,
+      title: title,
+      goal: goal,
+      checkIn: checkIn,
+      checkOut: checkOut,
+      plot: plot,
+      text: '',
+      elapsedTime: 0,
+      lastMilestone: 0,
+      updatedAt: Date.now()
+    };
+
+    hideNewProjectModal();
+    openProject(id);
+    toast('チェックインしました！');
+  }
 }
 
 function deleteProject(id) {
@@ -720,7 +844,6 @@ function updateTimer() {
   if (!db.currentId || !db.projects[db.currentId]) return;
   const p = db.projects[db.currentId];
   
-  // 執筆時間の累積計算
   const currentSessionSec = Math.floor((Date.now() - sessionStartTime) / 1000);
   const totalSec = (p.elapsedTime || 0) + currentSessionSec;
 
@@ -729,7 +852,6 @@ function updateTimer() {
   const s = String(totalSec % 60).padStart(2, '0');
   $('timer').textContent = `${h}:${m}:${s}`;
 
-  // チェックアウト残り時間カウントダウン計算
   if (p.checkOut) {
     const target = new Date(p.checkOut).getTime();
     const diff = target - Date.now();
@@ -780,10 +902,13 @@ function update() {
   $('count').textContent = fmt(n);
   $('percent').textContent = Math.min(100, Math.floor(n / g * 100)) + '%';
 
-  const milestone = Math.floor(n / 2500) * 2500;
-  if (milestone > 0 && milestone > (p.lastMilestone || 0)) {
-    p.lastMilestone = milestone;
-    showMilestone(milestone);
+  /* ポップアップ機能が有効な場合のみチェック */
+  if (db.settings?.showMilestonePopup !== false) {
+    const milestone = Math.floor(n / 2500) * 2500;
+    if (milestone > 0 && milestone > (p.lastMilestone || 0)) {
+      p.lastMilestone = milestone;
+      showMilestone(milestone);
+    }
   }
 }
 
@@ -916,6 +1041,7 @@ function handleFileImport(event) {
       if (imported && imported.projects) {
         if (confirm('現在のデータを上書きしてバックアップから復元しますか？')) {
           db = imported;
+          if (!db.settings) db.settings = { showMilestonePopup: true };
           saveData();
           renderProjectList();
           if (!$('write').classList.contains('hidden') && db.currentId && db.projects[db.currentId]) {
