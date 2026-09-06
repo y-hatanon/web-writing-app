@@ -179,7 +179,7 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   padding:2px 6px;
   border-radius:4px;
   width:100%;
-  max-width:280px;
+  max-width:240px;
 }
 .editor-header .title-input:hover{border-color:var(--line);background:#fff}
 .editor-header .title-input:focus{border-color:var(--accent);background:#fff}
@@ -187,7 +187,7 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
 .editor-header .stats-info{
   display:flex;
   align-items:center;
-  gap:12px;
+  gap:10px;
   font-variant-numeric:tabular-nums;
   white-space:nowrap;
   flex-shrink:0;
@@ -203,7 +203,7 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   display:flex;
   flex-direction:column;
   position:relative;
-  min-height:0; /* フレックスコンテナスクロール制御用 */
+  min-height:0;
 }
 #manuscript{
   width:100%;
@@ -275,8 +275,8 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   color:var(--muted);
   display:flex;
   align-items:center;
-  justify-content:space-between;
-  gap:8px;
+  justify-content:flex-end;
+  gap:12px;
   padding:2px 2px 0;
 }
 
@@ -319,16 +319,18 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
 
   .editor-container{padding:6px 8px}
   .editor-header{
-    flex-direction:column;
+    flex-direction:column-reverse; /* 上下逆（ステータスが上、タイトルが下） */
     align-items:stretch;
-    gap:4px;
+    gap:6px;
     padding-bottom:6px;
   }
   .editor-header .stats-info{
-    justify-content:space-between;
+    justify-content:flex-end; /* 右寄せ */
+    flex-wrap:wrap;
+    gap:6px 10px;
     font-size:11px;
     background:#ebe6de;
-    padding:4px 8px;
+    padding:6px 8px;
     border-radius:4px;
   }
   .editor-header .title-input{
@@ -337,7 +339,7 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   }
   #manuscript{
     padding:12px;
-    font-size:16px; /* iOSのフォーカス時自動ズーム防止 */
+    font-size:16px;
     line-height:1.85;
   }
   .action-bar{
@@ -357,10 +359,8 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
 </head>
 <body>
 
-<!-- 非表示のファイル読み込み用input -->
 <input type="file" id="importFileInput" accept=".json" style="display:none;" onchange="handleFileImport(event)">
 
-<!-- ロビー画面（作品一覧＆新規作成） -->
 <section id="lobby" class="screen-lobby">
   <div class="card">
     <header>
@@ -368,13 +368,11 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
         <div class="kamon">Web原稿合宿専用宿</div>
         <h1>Web旅館 ゆけむり</h1>
       </div>
-      <button class="primary" onclick="showNewProjectModal()">＋ 新規作品を作成</button>
+      <button class="primary" onclick="showNewProjectModal()">＋ 新規プラン作成</button>
     </header>
     <div class="setup">
-      <div style="font-weight:600;font-size:14px;color:#4a423d;">作品一覧</div>
-      <div id="projectList" class="project-list-container">
-        <!-- JSで作品カードを挿入 -->
-      </div>
+      <div style="font-weight:600;font-size:14px;color:#4a423d;">ご滞在中の作品一覧</div>
+      <div id="projectList" class="project-list-container"></div>
 
       <div class="grid">
         <button class="secondary" onclick="exportBackupData()">全データバックアップ (JSON)</button>
@@ -388,11 +386,8 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   </div>
 </section>
 
-<!-- 執筆画面（小説エディタ風UI） -->
 <section id="write" class="hidden">
   <div class="editor-container">
-    
-    <!-- 上部：ステータスバー -->
     <div class="editor-header">
       <div class="title-container">
         <input id="roomTitle" class="title-input" title="クリックしてタイトルを変更" placeholder="無題" onchange="updateTitleFromInput()">
@@ -401,15 +396,14 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
         <span>文字数: <b id="count">0</b></span>
         <span>目標: <b id="goalView">10,000</b></span>
         <span>進捗: <b id="percent">0%</b></span>
+        <span id="checkoutCountdownContainer">残り: <b id="checkoutCountdown">--:--:--</b></span>
       </div>
     </div>
 
-    <!-- 中央：本文入力欄 -->
     <div class="editor-main">
       <textarea id="manuscript" placeholder="ここに本文を執筆してください……"></textarea>
     </div>
 
-    <!-- 下部：記号ボタン & 操作アクション -->
     <div class="editor-footer">
       <div class="symbol-bar">
         <button class="symbol-btn" onclick="insertSymbol('――')">――</button>
@@ -428,15 +422,13 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
       </div>
 
       <div class="footer-meta">
-        <span>時間: <span id="timer">00:00:00</span></span>
+        <span>執筆時間: <span id="timer">00:00:00</span></span>
         <span id="saved">自動保存: 準備中</span>
         <button class="secondary" style="padding:3px 8px;font-size:11px;" onclick="exportBackupData()">JSONバックアップ</button>
       </div>
     </div>
-
   </div>
 
-  <!-- プロット表示モーダル -->
   <div id="plotOverlay" class="modal-overlay hidden">
     <div class="modal-box">
       <div class="modal-head">
@@ -452,35 +444,41 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   </div>
 </section>
 
-<!-- 新規作品作成モーダル -->
+<!-- 新規/編集モーダル -->
 <div id="newProjectOverlay" class="modal-overlay hidden">
   <div class="modal-box" style="max-width:500px;">
     <div class="modal-head">
-      <h2>新規作品の作成</h2>
+      <h2 id="modalTitle">新規ご宿泊プランの作成</h2>
       <button class="close-btn" onclick="hideNewProjectModal()">×</button>
     </div>
     <div style="display:grid;gap:12px;margin-bottom:16px;">
       <label>作品名
-        <input id="newTitle" placeholder="作品名を入力します。執筆開始後も変更可能です。">
+        <input id="newTitle" placeholder="作品名を入力します（執筆中も変更可能）">
       </label>
       <label>目標文字数
         <input id="newGoal" type="number" min="1" step="100" value="10000">
       </label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <label>チェックイン日時
+          <input id="newCheckIn" type="datetime-local">
+        </label>
+        <label>チェックアウト日時
+          <input id="newCheckOut" type="datetime-local">
+        </label>
+      </div>
       <label>プロット・メモ
-        <textarea id="newPlot" style="min-height:80px;" placeholder="登場人物やアウトラインなど"></textarea>
+        <textarea id="newPlot" style="min-height:80px;" placeholder="登場人物やストーリーのアウトラインなど"></textarea>
       </label>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:8px;">
       <button class="secondary" onclick="hideNewProjectModal()">キャンセル</button>
-      <button class="primary" onclick="createNewProject()">作成して執筆開始</button>
+      <button class="primary" onclick="createNewProject()">原稿合宿を開始</button>
     </div>
   </div>
 </div>
 
-<!-- トースト表示 -->
 <div id="toast" class="toast"></div>
 
-<!-- マイルストーン表示 -->
 <div id="milestone" class="milestone">
   <div class="mbox">
     <h2 id="milestoneTitle">二千五百字</h2>
@@ -491,19 +489,19 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
 
 <script>
 const STORAGE_KEY = 'yugomori_v2_data';
+const FULL_WIDTH_SPACE = '\u3000';
 
-// 全データ構造
 let db = {
   currentId: null,
   projects: {}
 };
 
 let timerId, autoId;
+let isPasting = false;
 
 function $(id) { return document.getElementById(id); }
 function fmt(n) { return n.toLocaleString('ja-JP'); }
 
-/* 今日の日付（YYYYMMDD）を取得 */
 function getFormattedDate() {
   const d = new Date();
   const y = d.getFullYear();
@@ -512,37 +510,28 @@ function getFormattedDate() {
   return `${y}${m}${day}`;
 }
 
-/* 安全なファイル名文字列の生成 */
+function formatDatetimeLocal(d) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatDisplayDate(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return '';
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 function getSafeTitle(rawTitle) {
   const safe = (rawTitle || '無題').replace(/[\\/:*?"<>|]/g, '_').trim();
   return safe || '無題';
 }
 
-/* データの読み書き */
 function loadData() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       db = JSON.parse(raw);
-    } else {
-      // 互換性：旧形式データがあれば移行
-      const old = localStorage.getItem('yugomori_v1');
-      if (old) {
-        const s = JSON.parse(old);
-        const id = 'p_' + Date.now();
-        db.projects[id] = {
-          id: id,
-          title: s.title || '無題の物語',
-          goal: s.goal || 10000,
-          plot: s.plot || '',
-          text: s.text || '',
-          elapsedTime: 0,
-          lastMilestone: s.lastMilestone || 0,
-          updatedAt: Date.now()
-        };
-        db.currentId = id;
-        saveData();
-      }
     }
   } catch(e) {}
 }
@@ -561,7 +550,6 @@ function saveData() {
   }
 }
 
-/* 作品一覧UIの描画 */
 function renderProjectList() {
   const container = $('projectList');
   container.innerHTML = '';
@@ -571,7 +559,7 @@ function renderProjectList() {
   if (list.length === 0) {
     container.innerHTML = `
       <div class="empty-state">
-        作品が登録されていません。<br>右上ボタンの「＋ 新規作品を作成」から新しい執筆を開始してください。
+        ご滞在中のプランがありません。<br>右上ボタンの「＋ 新規プラン作成」からチェックインしてください。
       </div>
     `;
     return;
@@ -581,13 +569,21 @@ function renderProjectList() {
     const count = [...(p.text || '')].length;
     const item = document.createElement('div');
     item.className = 'project-item';
+    
+    let timeStr = '';
+    if (p.checkIn || p.checkOut) {
+      const inStr = p.checkIn ? formatDisplayDate(p.checkIn) : '未設定';
+      const outStr = p.checkOut ? formatDisplayDate(p.checkOut) : '未設定';
+      timeStr = ` | 滞在: ${inStr} 〜 ${outStr}`;
+    }
+
     item.innerHTML = `
       <div class="project-info">
         <div class="project-title-text">${escapeHtml(p.title || '無題')}</div>
-        <div class="project-meta-text">${fmt(count)} 字 / 目標 ${fmt(p.goal)} 字 (${Math.min(100, Math.floor(count/p.goal*100))}%)</div>
+        <div class="project-meta-text">${fmt(count)} 字 / 目標 ${fmt(p.goal)} 字 (${Math.min(100, Math.floor(count/p.goal*100))}%)${timeStr}</div>
       </div>
       <div class="project-actions">
-        <button class="secondary" onclick="openProject('${p.id}')">執筆する</button>
+        <button class="secondary" onclick="openProject('${p.id}')">執筆部屋へ</button>
         <button class="danger" onclick="deleteProject('${p.id}')">削除</button>
       </div>
     `;
@@ -599,7 +595,22 @@ function escapeHtml(str) {
   return str.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
 
-/* 作品切り替え・作成・削除 */
+function ensureFirstLineIndent() {
+  if (isPasting) return;
+  const el = $('manuscript');
+  if (!el) return;
+  let val = el.value;
+
+  if (val === '') return;
+
+  if (!/^[  \u3000「『（【〈《〔[{『“"]/.test(val)) {
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    el.value = FULL_WIDTH_SPACE + val;
+    el.setSelectionRange(start + 1, end + 1);
+  }
+}
+
 function openProject(id) {
   commitSessionTime();
   saveData();
@@ -630,8 +641,13 @@ function showProjectList() {
 }
 
 function showNewProjectModal() {
+  const now = new Date();
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
   $('newTitle').value = '';
   $('newGoal').value = 10000;
+  $('newCheckIn').value = formatDatetimeLocal(now);
+  $('newCheckOut').value = formatDatetimeLocal(tomorrow);
   $('newPlot').value = '';
   $('newProjectOverlay').classList.remove('hidden');
 }
@@ -643,6 +659,8 @@ function hideNewProjectModal() {
 function createNewProject() {
   const title = $('newTitle').value.trim() || '無題の物語';
   const goal = Math.max(1, Number($('newGoal').value) || 10000);
+  const checkIn = $('newCheckIn').value;
+  const checkOut = $('newCheckOut').value;
   const plot = $('newPlot').value;
 
   const id = 'p_' + Date.now();
@@ -650,6 +668,8 @@ function createNewProject() {
     id: id,
     title: title,
     goal: goal,
+    checkIn: checkIn,
+    checkOut: checkOut,
     plot: plot,
     text: '',
     elapsedTime: 0,
@@ -659,12 +679,12 @@ function createNewProject() {
 
   hideNewProjectModal();
   openProject(id);
-  toast('新しい作品を作成しました');
+  toast('チェックインしました！');
 }
 
 function deleteProject(id) {
   const p = db.projects[id];
-  if (confirm(`作品「${p.title}」を削除してもよろしいですか？`)) {
+  if (confirm(`作品「${p.title}」の合宿データを削除しますか？`)) {
     delete db.projects[id];
     if (db.currentId === id) {
       const remainingIds = Object.keys(db.projects);
@@ -672,11 +692,10 @@ function deleteProject(id) {
     }
     saveData();
     renderProjectList();
-    toast('作品を削除しました');
+    toast('データを削除しました');
   }
 }
 
-/* リアルタイムタイトル更新 */
 function updateTitleFromInput() {
   const newTitle = $('roomTitle').value.trim() || '無題';
   if (db.currentId && db.projects[db.currentId]) {
@@ -685,7 +704,6 @@ function updateTitleFromInput() {
   }
 }
 
-/* タイマー制御 */
 let sessionStartTime = null;
 
 function startClocks() {
@@ -701,6 +719,8 @@ function startClocks() {
 function updateTimer() {
   if (!db.currentId || !db.projects[db.currentId]) return;
   const p = db.projects[db.currentId];
+  
+  // 執筆時間の累積計算
   const currentSessionSec = Math.floor((Date.now() - sessionStartTime) / 1000);
   const totalSec = (p.elapsedTime || 0) + currentSessionSec;
 
@@ -708,6 +728,30 @@ function updateTimer() {
   const m = String(Math.floor(totalSec % 3600 / 60)).padStart(2, '0');
   const s = String(totalSec % 60).padStart(2, '0');
   $('timer').textContent = `${h}:${m}:${s}`;
+
+  // チェックアウト残り時間カウントダウン計算
+  if (p.checkOut) {
+    const target = new Date(p.checkOut).getTime();
+    const diff = target - Date.now();
+    if (isNaN(target)) {
+      $('checkoutCountdownContainer').classList.add('hidden');
+    } else {
+      $('checkoutCountdownContainer').classList.remove('hidden');
+      if (diff <= 0) {
+        $('checkoutCountdown').textContent = '超過';
+        $('checkoutCountdown').style.color = 'var(--danger-btn)';
+      } else {
+        const remSec = Math.floor(diff / 1000);
+        const rh = String(Math.floor(remSec / 3600)).padStart(2, '0');
+        const rm = String(Math.floor(remSec % 3600 / 60)).padStart(2, '0');
+        const rs = String(remSec % 60).padStart(2, '0');
+        $('checkoutCountdown').textContent = `${rh}:${rm}:${rs}`;
+        $('checkoutCountdown').style.color = 'var(--ink)';
+      }
+    }
+  } else {
+    $('checkoutCountdownContainer').classList.add('hidden');
+  }
 }
 
 function commitSessionTime() {
@@ -725,7 +769,6 @@ function saveNow() {
   toast('原稿を保存しました');
 }
 
-/* 本文カウントとマイルストーン */
 function countText(t) { return [...t].length; }
 
 function update() {
@@ -763,7 +806,6 @@ function closeMilestone() {
   $('manuscript').focus();
 }
 
-/* 記号・括弧挿入 */
 function insertSymbol(sym) {
   const el = $('manuscript');
   const start = el.selectionStart;
@@ -792,7 +834,6 @@ function insertBracket(open, close) {
   el.focus();
 }
 
-/* プロット関係 */
 function showPlot() {
   if (db.currentId && db.projects[db.currentId]) {
     $('plotWork').value = db.projects[db.currentId].plot || '';
@@ -811,7 +852,7 @@ function savePlot() {
   toast('プロットを保存しました');
 }
 
-/* 原稿書き出し */
+/* TXT書き出し */
 function exportTxt() {
   saveNow();
   if (!db.currentId || !db.projects[db.currentId]) return;
@@ -825,8 +866,10 @@ function exportTxt() {
 
   const indentedText = rawText.split('\n').map(line => {
     if (line.length === 0) return line;
-    if (line.startsWith(' ')) return line;
-    return ' ' + line;
+    if (/^[  \u3000「『（【〈《〔[{『“"]/.test(line)) {
+      return line;
+    }
+    return FULL_WIDTH_SPACE + line;
   }).join('\n');
 
   const body = `${p.title || '無題'}\n\n${indentedText}\n`;
@@ -839,7 +882,6 @@ function exportTxt() {
   toast('原稿を書き出しました');
 }
 
-/* 全データバックアップ（JSON出力） */
 function exportBackupData() {
   saveNow();
   let safeTitle = '原稿';
@@ -858,7 +900,6 @@ function exportBackupData() {
   toast('バックアップを出力しました');
 }
 
-/* 全データ復元（JSON読み込み） */
 function triggerImportFile() {
   $('importFileInput').click();
 }
@@ -900,8 +941,39 @@ function toast(t) {
   setTimeout(() => e.classList.remove('show'), 1800);
 }
 
-// イベント設定と初期起動
-$('manuscript').addEventListener('input', () => { update(); saveData(); });
+/* Enterキー押下時の全角スペース自動挿入処理 */
+$('manuscript').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.isComposing) {
+    e.preventDefault();
+    const el = e.target;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const val = el.value;
+
+    const textAfterCursor = val.substring(end);
+    
+    const startsWithBracketOrSpace = /^[  \u3000「『（【〈《〔[{『“"]/.test(textAfterCursor);
+    const insertText = '\n' + (startsWithBracketOrSpace ? '' : FULL_WIDTH_SPACE);
+    
+    el.setRangeText(insertText, start, end, 'end');
+    
+    update();
+    saveData();
+  }
+});
+
+// 貼り付けイベント検知（自動挿入を防止）
+$('manuscript').addEventListener('paste', () => {
+  isPasting = true;
+  setTimeout(() => { isPasting = false; }, 100);
+});
+
+// 通常の入力イベント
+$('manuscript').addEventListener('input', () => { 
+  ensureFirstLineIndent();
+  update(); 
+  saveData(); 
+});
 
 loadData();
 renderProjectList();
