@@ -107,13 +107,13 @@ h1{margin:6px 0 2px;font-family:serif;font-size:clamp(22px,4vw,32px);font-weight
 }
 
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-/* モーダル内の日時入力欄用グリッドクラス */
-.datetime-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.datetime-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;min-width:0;}
 
-label{display:grid;gap:6px;font-weight:600;font-size:13px;color:#4a423d}
+label{display:grid;gap:6px;font-weight:600;font-size:13px;color:#4a423d;min-width:0;}
 input,textarea{
   width:100%;
   max-width:100%;
+  min-width:0;
   border:1px solid var(--line);
   border-radius:6px;
   background:#fff;
@@ -121,6 +121,15 @@ input,textarea{
   padding:10px;
   outline:none;
 }
+
+/* datetime-localのスマホ用崩れ対策 */
+input[type="datetime-local"] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-height: 42px;
+  background-color: #fff;
+}
+
 input:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(90,74,66,0.15)}
 textarea{resize:vertical;min-height:120px;line-height:1.6}
 .primary{
@@ -180,7 +189,7 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   box-sizing:border-box;
 }
 
-/* 上部ステータスバー */
+/* 上部ステータスバー（右寄せ） */
 .editor-header{
   display:flex;
   justify-content:space-between;
@@ -191,7 +200,7 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   border-bottom:1px solid var(--line);
   margin-bottom:8px;
   flex-shrink:0;
-  gap:8px;
+  gap:12px;
 }
 .editor-header .title-container{
   display:flex;
@@ -218,7 +227,8 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
 .editor-header .stats-info{
   display:flex;
   align-items:center;
-  gap:10px;
+  justify-content:flex-end;
+  gap:12px;
   font-variant-numeric:tabular-nums;
   white-space:nowrap;
   flex-shrink:0;
@@ -313,6 +323,8 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   padding:9px 0;
   font-size:12px;
 }
+
+/* 下部メタ情報エリア（右寄せに統一） */
 .footer-meta{
   font-size:11px;
   color:var(--muted);
@@ -322,6 +334,7 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   gap:10px;
   padding:2px 2px 0;
   flex-wrap:wrap;
+  font-variant-numeric:tabular-nums;
 }
 
 /* モーダル共通 */
@@ -337,6 +350,7 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   flex-direction:column;
   max-height:85vh;
   max-height:85dvh;
+  overflow-y:auto;
 }
 .modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
 .modal-head h2{font-size:16px;margin:0;color:var(--ink);font-weight:600}
@@ -353,20 +367,32 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
 
 /* --- スマホ専用レスポンシブスタイル (600px以下) --- */
 @media(max-width:600px){
-  .screen-lobby{padding:10px}
+  .screen-lobby{
+    padding:10px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+  }
   header{padding:16px;flex-direction:column;align-items:flex-start;gap:12px}
   header button{width:100%}
   .setup{padding:16px 12px}
   .grid{grid-template-columns:1fr}
   
-  /* モーダル内の日時入力欄を縦並びに */
-  .datetime-grid{grid-template-columns:1fr; gap:12px}
+  .datetime-grid{
+    grid-template-columns:1fr !important;
+    gap:12px;
+  }
 
   .project-item{flex-direction:column;align-items:stretch}
   .project-actions{justify-content:flex-end;margin-top:4px}
   .project-meta-text{font-size:11px;}
 
-  .editor-container{padding:6px 8px}
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+
+  .editor-container{
+    padding:6px 8px;
+    padding-bottom: calc(6px + env(safe-area-inset-bottom));
+  }
   .editor-header{
     flex-direction:column-reverse;
     align-items:stretch;
@@ -384,7 +410,7 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   }
   .editor-header .title-input{
     max-width:100%;
-    font-size:15px;
+    font-size:16px;
   }
   #manuscript{
     padding:12px;
@@ -397,11 +423,16 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   }
   .action-group{
     display:grid;
-    grid-template-columns:repeat(4, 1fr);
+    grid-template-columns:repeat(2, 1fr);
+    gap:6px;
   }
   .footer-meta{
     font-size:10px;
-    padding-top:2px;
+    padding:4px 8px;
+    justify-content:flex-end; /* スマホでも右寄せに維持 */
+    background:#ebe6de;
+    border-radius:4px;
+    gap:8px;
   }
 }
 </style>
@@ -611,7 +642,6 @@ function saveData() {
   }
 }
 
-/* ポップアップ表示設定の切り替え */
 function togglePopupSetting() {
   if (!db.settings) db.settings = {};
   db.settings.showMilestonePopup = !db.settings.showMilestonePopup;
@@ -763,7 +793,6 @@ function saveProjectModal() {
   const plot = $('newPlot').value;
 
   if (editingProjectId) {
-    // 既存プロジェクトの編集保存
     const p = db.projects[editingProjectId];
     p.title = title;
     p.goal = goal;
@@ -785,7 +814,6 @@ function saveProjectModal() {
     }
     toast('プラン内容を保存しました');
   } else {
-    // 新規プロジェクト作成
     const id = 'p_' + Date.now();
     db.projects[id] = {
       id: id,
@@ -902,7 +930,6 @@ function update() {
   $('count').textContent = fmt(n);
   $('percent').textContent = Math.min(100, Math.floor(n / g * 100)) + '%';
 
-  /* ポップアップ機能が有効な場合のみチェック */
   if (db.settings?.showMilestonePopup !== false) {
     const milestone = Math.floor(n / 2500) * 2500;
     if (milestone > 0 && milestone > (p.lastMilestone || 0)) {
@@ -977,7 +1004,6 @@ function savePlot() {
   toast('プロットを保存しました');
 }
 
-/* TXT書き出し */
 function exportTxt() {
   saveNow();
   if (!db.currentId || !db.projects[db.currentId]) return;
@@ -1067,7 +1093,6 @@ function toast(t) {
   setTimeout(() => e.classList.remove('show'), 1800);
 }
 
-/* Enterキー押下時の全角スペース自動挿入処理 */
 $('manuscript').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.isComposing) {
     e.preventDefault();
@@ -1088,13 +1113,11 @@ $('manuscript').addEventListener('keydown', (e) => {
   }
 });
 
-// 貼り付けイベント検知（自動挿入を防止）
 $('manuscript').addEventListener('paste', () => {
   isPasting = true;
   setTimeout(() => { isPasting = false; }, 100);
 });
 
-// 通常の入力イベント
 $('manuscript').addEventListener('input', () => { 
   ensureFirstLineIndent();
   update(); 
