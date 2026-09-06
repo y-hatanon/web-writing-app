@@ -455,7 +455,7 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
       <div id="projectList" class="project-list-container"></div>
 
       <div class="grid">
-        <button class="secondary" onclick="exportBackupData()">全データバックアップ (JSON)</button>
+        <button class="secondary" onclick="exportBackupData(true)">全データバックアップ (JSON)</button>
         <button class="secondary" onclick="triggerImportFile()">全データ復元 (JSON読み込み)</button>
       </div>
 
@@ -1061,14 +1061,20 @@ function exportTxt() {
   toast('原稿を書き出しました');
 }
 
-function exportBackupData() {
+function exportBackupData(isAll = false) {
   saveNow();
-  let safeTitle = '原稿';
-  if (db.currentId && db.projects[db.currentId]) {
-    safeTitle = getSafeTitle(db.projects[db.currentId].title);
-  }
   const dateStr = getFormattedDate();
-  const fileName = `${safeTitle}_バックアップ_${dateStr}.json`;
+  let fileName = '';
+
+  if (isAll || $('write').classList.contains('hidden')) {
+    fileName = `全作品_バックアップ_${dateStr}.json`;
+  } else {
+    let safeTitle = '原稿';
+    if (db.currentId && db.projects[db.currentId]) {
+      safeTitle = getSafeTitle(db.projects[db.currentId].title);
+    }
+    fileName = `${safeTitle}_バックアップ_${dateStr}.json`;
+  }
 
   const dataStr = JSON.stringify(db, null, 2);
   const a = document.createElement('a');
