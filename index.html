@@ -26,15 +26,39 @@ body{
   font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo",sans-serif;
   background:var(--bg-dark);
   min-height:100vh;
+  min-height:100dvh;
 }
 button,input,textarea{font:inherit}
-button{cursor:pointer;border:none;outline:none}
+button{cursor:pointer;border:none;outline:none;-webkit-tap-highlight-color:transparent}
 .hidden{display:none!important}
 
 /* --- ロビー / 作品一覧画面 --- */
-.screen-lobby{min-height:100vh;padding:18px;display:flex;align-items:center;justify-content:center}
-.card{max-width:850px;width:100%;margin:0 auto;background:#fcfaf7;border:1px solid #dcd5cc;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.3);overflow:hidden}
-header{padding:24px 28px 18px;background:#3a322d;color:#fff;display:flex;justify-content:space-between;align-items:flex-end}
+.screen-lobby{
+  min-height:100vh;
+  min-height:100dvh;
+  padding:18px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.card{
+  max-width:850px;
+  width:100%;
+  margin:0 auto;
+  background:#fcfaf7;
+  border:1px solid #dcd5cc;
+  border-radius:12px;
+  box-shadow:0 10px 30px rgba(0,0,0,0.3);
+  overflow:hidden;
+}
+header{
+  padding:24px 28px 18px;
+  background:#3a322d;
+  color:#fff;
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-end;
+}
 .kamon{font-size:12px;letter-spacing:.2em;opacity:.7}
 h1{margin:6px 0 2px;font-family:serif;font-size:clamp(22px,4vw,32px);font-weight:500}
 .subtitle{font-size:13px;opacity:.8}
@@ -43,15 +67,21 @@ h1{margin:6px 0 2px;font-family:serif;font-size:clamp(22px,4vw,32px);font-weight
 /* 作品リスト表示 */
 .project-list-container{display:grid;gap:12px;margin-bottom:8px}
 .project-item{
-  display:flex;justify-content:space-between;align-items:center;
-  padding:14px 16px;background:#fff;border:1px solid var(--line);
-  border-radius:8px;transition:border-color .15s;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:14px 16px;
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:8px;
+  transition:border-color .15s;
+  gap:12px;
 }
 .project-item:hover{border-color:var(--accent)}
-.project-info{display:grid;gap:4px}
+.project-info{display:grid;gap:4px;flex:1}
 .project-title-text{font-weight:600;font-size:15px;color:var(--ink)}
 .project-meta-text{font-size:12px;color:var(--muted)}
-.project-actions{display:flex;gap:8px}
+.project-actions{display:flex;gap:8px;flex-shrink:0}
 
 .empty-state{
   padding:32px 16px;text-align:center;color:var(--muted);
@@ -63,25 +93,57 @@ label{display:grid;gap:6px;font-weight:600;font-size:13px;color:#4a423d}
 input,textarea{width:100%;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);padding:10px;outline:none}
 input:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(90,74,66,0.15)}
 textarea{resize:vertical;min-height:120px;line-height:1.6}
-.primary{border-radius:6px;padding:10px 18px;background:var(--primary-btn);color:var(--primary-btn-text);font-weight:600;font-size:14px}
-.secondary{border:1px solid var(--line);border-radius:6px;padding:8px 14px;background:var(--accent-btn);color:var(--ink);font-weight:500;font-size:13px;transition:background .15s}
+.primary{
+  border-radius:6px;
+  padding:10px 18px;
+  background:var(--primary-btn);
+  color:var(--primary-btn-text);
+  font-weight:600;
+  font-size:14px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+}
+.secondary{
+  border:1px solid var(--line);
+  border-radius:6px;
+  padding:8px 14px;
+  background:var(--accent-btn);
+  color:var(--ink);
+  font-weight:500;
+  font-size:13px;
+  transition:background .15s;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+}
 .secondary:hover{background:var(--accent-btn-hover)}
-.danger{border-radius:6px;padding:6px 10px;background:var(--danger-btn);color:#fff;font-size:12px}
+.danger{
+  border-radius:6px;
+  padding:6px 10px;
+  background:var(--danger-btn);
+  color:#fff;
+  font-size:12px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+}
 .note{font-size:11px;color:var(--muted);line-height:1.6}
 
 /* --- 執筆画面（エディタUI） --- */
 #write{
-  min-height:100vh;
-  min-height:100dvh;
+  height:100vh;
+  height:100dvh;
   background:var(--bg-editor);
   display:flex;
   flex-direction:column;
+  overflow:hidden;
 }
 .editor-container{
   max-width:960px;
   width:100%;
   margin:0 auto;
-  flex:1;
+  height:100%;
   display:flex;
   flex-direction:column;
   padding:12px 16px;
@@ -98,13 +160,14 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   color:var(--muted);
   border-bottom:1px solid var(--line);
   margin-bottom:8px;
-  flex-wrap:wrap;
-  gap:6px;
+  flex-shrink:0;
+  gap:8px;
 }
 .editor-header .title-container{
   display:flex;
   align-items:center;
   gap:6px;
+  flex:1;
 }
 .editor-header .title-input{
   font-family:serif;
@@ -115,7 +178,8 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   background:transparent;
   padding:2px 6px;
   border-radius:4px;
-  max-width:240px;
+  width:100%;
+  max-width:280px;
 }
 .editor-header .title-input:hover{border-color:var(--line);background:#fff}
 .editor-header .title-input:focus{border-color:var(--accent);background:#fff}
@@ -125,23 +189,25 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   align-items:center;
   gap:12px;
   font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+  flex-shrink:0;
 }
 .stats-info span b{
   color:var(--ink);
   font-weight:600;
 }
 
-/* 本文入力エリア */
+/* 本文入力エリア（スクロール独立） */
 .editor-main{
   flex:1;
   display:flex;
   flex-direction:column;
   position:relative;
-  min-height:350px;
+  min-height:0; /* フレックスコンテナスクロール制御用 */
 }
 #manuscript{
   width:100%;
-  flex:1;
+  height:100%;
   border:1px solid var(--line);
   border-radius:8px;
   padding:20px;
@@ -166,42 +232,52 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   display:flex;
   flex-direction:column;
   gap:8px;
+  flex-shrink:0;
+  padding-bottom:env(safe-area-inset-bottom);
 }
 .symbol-bar{
-  display:flex;
+  display:grid;
+  grid-template-columns:repeat(4, 1fr);
   gap:6px;
-  flex-wrap:wrap;
 }
 .symbol-btn{
   border:1px solid var(--line);
-  border-radius:4px;
+  border-radius:6px;
   background:#fff;
   color:var(--ink);
-  padding:4px 10px;
+  padding:8px 0;
   font-size:13px;
   font-family:serif;
+  text-align:center;
   transition:background .15s;
 }
 .symbol-btn:hover{background:#f0ebe3}
+.symbol-btn:active{background:#e8e2d8}
 
 .action-bar{
   display:flex;
   justify-content:space-between;
   align-items:center;
-  flex-wrap:wrap;
   gap:8px;
 }
 .action-group{
   display:flex;
   gap:6px;
-  flex-wrap:wrap;
+  flex:1;
+}
+.action-group .secondary{
+  flex:1;
+  padding:9px 0;
+  font-size:12px;
 }
 .footer-meta{
   font-size:11px;
   color:var(--muted);
   display:flex;
   align-items:center;
-  gap:12px;
+  justify-content:space-between;
+  gap:8px;
+  padding:2px 2px 0;
 }
 
 /* モーダル共通 */
@@ -216,11 +292,12 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   display:flex;
   flex-direction:column;
   max-height:85vh;
+  max-height:85dvh;
 }
 .modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
 .modal-head h2{font-size:16px;margin:0;color:var(--ink);font-weight:600}
 .close-btn{border:0;background:none;font-size:22px;color:var(--muted);cursor:pointer;padding:0 4px}
-.plot-textarea{width:100%;flex:1;min-height:240px;border:1px solid var(--line);border-radius:6px;padding:12px;line-height:1.7;font-size:14px;resize:vertical;margin-bottom:12px}
+.plot-textarea{width:100%;flex:1;min-height:200px;border:1px solid var(--line);border-radius:6px;padding:12px;line-height:1.7;font-size:14px;resize:vertical;margin-bottom:12px}
 
 /* 通知トースト・演出 */
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#2c2c2c;color:#fff;padding:9px 18px;border-radius:20px;font-size:13px;box-shadow:0 4px 15px rgba(0,0,0,0.2);opacity:0;pointer-events:none;transition:.25s;z-index:200}
@@ -230,16 +307,51 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
 .mbox{max-width:440px;width:100%;background:#fffaf5;color:var(--ink);border-radius:12px;padding:28px;text-align:center;box-shadow:0 15px 50px rgba(0,0,0,0.3)}
 .mbox h2{font-family:serif;font-size:26px;margin:0 0 10px;color:var(--accent)}
 
+/* --- スマホ専用レスポンシブスタイル (600px以下) --- */
 @media(max-width:600px){
   .screen-lobby{padding:10px}
+  header{padding:16px;flex-direction:column;align-items:flex-start;gap:12px}
+  header button{width:100%}
+  .setup{padding:16px 12px}
   .grid{grid-template-columns:1fr}
-  .editor-container{padding:8px 10px}
-  .editor-header{font-size:11px;padding:4px 2px 8px}
-  .editor-header .title-input{max-width:130px;font-size:13px}
-  #manuscript{padding:14px;font-size:16px;line-height:1.9}
-  .symbol-btn{padding:5px 8px;font-size:12px}
-  .secondary{padding:7px 10px;font-size:12px}
-  .footer-meta{font-size:10px}
+  .project-item{flex-direction:column;align-items:stretch}
+  .project-actions{justify-content:flex-end;margin-top:4px}
+
+  .editor-container{padding:6px 8px}
+  .editor-header{
+    flex-direction:column;
+    align-items:stretch;
+    gap:4px;
+    padding-bottom:6px;
+  }
+  .editor-header .stats-info{
+    justify-content:space-between;
+    font-size:11px;
+    background:#ebe6de;
+    padding:4px 8px;
+    border-radius:4px;
+  }
+  .editor-header .title-input{
+    max-width:100%;
+    font-size:15px;
+  }
+  #manuscript{
+    padding:12px;
+    font-size:16px; /* iOSのフォーカス時自動ズーム防止 */
+    line-height:1.85;
+  }
+  .action-bar{
+    flex-direction:column;
+    align-items:stretch;
+  }
+  .action-group{
+    display:grid;
+    grid-template-columns:repeat(4, 1fr);
+  }
+  .footer-meta{
+    font-size:10px;
+    padding-top:2px;
+  }
 }
 </style>
 </head>
@@ -264,7 +376,7 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
         <!-- JSで作品カードを挿入 -->
       </div>
 
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
+      <div class="grid">
         <button class="secondary" onclick="exportBackupData()">全データバックアップ (JSON)</button>
         <button class="secondary" onclick="triggerImportFile()">全データ復元 (JSON読み込み)</button>
       </div>
@@ -313,11 +425,12 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
           <button class="secondary" onclick="showPlot()">プロット</button>
           <button class="secondary" onclick="showProjectList()">作品一覧</button>
         </div>
-        <div class="footer-meta">
-          <span>時間: <span id="timer">00:00:00</span></span>
-          <span id="saved">自動保存: 準備中</span>
-          <button class="secondary" onclick="exportBackupData()">JSONバックアップ</button>
-        </div>
+      </div>
+
+      <div class="footer-meta">
+        <span>時間: <span id="timer">00:00:00</span></span>
+        <span id="saved">自動保存: 準備中</span>
+        <button class="secondary" style="padding:3px 8px;font-size:11px;" onclick="exportBackupData()">JSONバックアップ</button>
       </div>
     </div>
 
@@ -712,8 +825,8 @@ function exportTxt() {
 
   const indentedText = rawText.split('\n').map(line => {
     if (line.length === 0) return line;
-    if (line.startsWith('　')) return line;
-    return '　' + line;
+    if (line.startsWith(' ')) return line;
+    return ' ' + line;
   }).join('\n');
 
   const body = `${p.title || '無題'}\n\n${indentedText}\n`;
