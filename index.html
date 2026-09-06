@@ -1062,11 +1062,13 @@ function exportTxt() {
 }
 
 function exportBackupData(isAll = false) {
-  saveNow();
+  if (typeof updateStorageFromCurrent === 'function') {
+    updateStorageFromCurrent();
+  }
   const dateStr = getFormattedDate();
   let fileName = '';
 
-  if (isAll || $('write').classList.contains('hidden')) {
+  if (isAll) {
     fileName = `全作品_バックアップ_${dateStr}.json`;
   } else {
     let safeTitle = '原稿';
@@ -1082,7 +1084,7 @@ function exportBackupData(isAll = false) {
   a.download = fileName;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  toast('バックアップを出力しました');
+  toast(isAll ? '全作品のバックアップを出力しました' : '作品のバックアップを出力しました');
 }
 
 function triggerImportFile() {
