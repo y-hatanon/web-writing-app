@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
 <title>Web旅館 ゆけむり</title>
 <style>
 :root{
@@ -345,8 +345,24 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
 }
 .symbol-bar{
   display:grid;
+  position: relative;
   grid-template-columns:repeat(4, 1fr);
   gap:6px;
+}
+
+/* キーボード表示時にJSで付与するクラス */
+.symbol-bar.is-floating {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  z-index: 9999;
+  box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.15);
+  padding: 6px 8px;
+}
+
+/* 本文エリアの最下部に余白をあてて、記号バーに文字が隠れないようにする */
+textarea, .editor-body {
+  padding-bottom: 60px; 
 }
 .symbol-btn{
   border:1px solid var(--line);
