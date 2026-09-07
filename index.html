@@ -18,17 +18,18 @@
   --primary-btn:#5a4a42;
   --primary-btn-text:#ffffff;
   --danger-btn:#a33a3a;
+  --font-gothic:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo",sans-serif;
 }
 *{box-sizing:border-box}
 body{
   margin:0;
   color:var(--ink);
-  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo",sans-serif;
+  font-family:var(--font-gothic);
   background:var(--bg-dark);
   min-height:100vh;
   min-height:100dvh;
 }
-button,input,textarea{font:inherit}
+button,input,textarea,select{font:inherit}
 button{cursor:pointer;border:none;outline:none;-webkit-tap-highlight-color:transparent}
 .hidden{display:none!important}
 
@@ -60,7 +61,7 @@ header{
   align-items:flex-end;
 }
 .kamon{font-size:12px;letter-spacing:.2em;opacity:.7}
-h1{margin:6px 0 2px;font-family:serif;font-size:clamp(22px,4vw,32px);font-weight:500}
+h1{margin:6px 0 2px;font-family:var(--font-gothic);font-size:clamp(22px,4vw,32px);font-weight:500}
 .subtitle{font-size:13px;opacity:.8}
 .setup{padding:24px;display:grid;gap:16px}
 
@@ -74,9 +75,19 @@ h1{margin:6px 0 2px;font-family:serif;font-size:clamp(22px,4vw,32px);font-weight
   background:#fff;
   border:1px solid var(--line);
   border-radius:8px;
-  transition:border-color .15s;
+  transition:border-color .15s, background-color .15s, opacity .15s;
   gap:12px;
   min-width:0;
+  cursor:grab;
+}
+.project-item:active{cursor:grabbing}
+.project-item.dragging{
+  opacity:0.4;
+  background:#f0ebe3;
+}
+.project-item.drag-over{
+  border-color:var(--accent);
+  border-top:2px solid var(--accent);
 }
 .project-item:hover{border-color:var(--accent)}
 .project-info{
@@ -85,30 +96,41 @@ h1{margin:6px 0 2px;font-family:serif;font-size:clamp(22px,4vw,32px);font-weight
   flex:1;
   min-width:0;
 }
-.lobby-title-input{
+.project-title-text{
   font-weight:600;
   font-size:15px;
   color:var(--ink);
-  font-family:serif;
-  border:1px solid transparent;
-  background:transparent;
-  padding:2px 6px;
-  border-radius:4px;
-  width:100%;
+  font-family:var(--font-gothic);
+  display:-webkit-box;
+  -webkit-line-clamp:2;
+  -webkit-box-orient:vertical;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  word-break:break-all;
 }
-.lobby-title-input:hover{border-color:var(--line);background:#fff}
-.lobby-title-input:focus{border-color:var(--accent);background:#fff;outline:none}
 
 .project-meta-text{
   font-size:12px;
   color:var(--muted);
-  line-height:1.4;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  padding-left:6px;
+  line-height:1.5;
+  padding-left:2px;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
 }
 .project-actions{display:flex;gap:6px;flex-shrink:0}
+
+.drag-handle{
+  display:flex;
+  align-items:center;
+  color:var(--muted);
+  cursor:grab;
+  padding:4px;
+  font-size:16px;
+  flex-shrink:0;
+  letter-spacing:-2px;
+}
+.drag-handle:active{cursor:grabbing}
 
 .empty-state{
   padding:32px 16px;text-align:center;color:var(--muted);
@@ -119,7 +141,9 @@ h1{margin:6px 0 2px;font-family:serif;font-size:clamp(22px,4vw,32px);font-weight
 .datetime-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;min-width:0;}
 
 label{display:grid;gap:6px;font-weight:600;font-size:13px;color:#4a423d;min-width:0;}
-input,textarea{
+.field-label-row{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-variant-numeric:tabular-nums;}
+.field-label-row span:last-child{font-weight:500;color:var(--muted);}
+input:not([type="range"]),textarea,select{
   width:100%;
   max-width:100%;
   min-width:0;
@@ -131,6 +155,23 @@ input,textarea{
   outline:none;
 }
 
+input[type="range"]{
+  width:100%;
+  padding:8px 0;
+  accent-color:var(--accent);
+}
+input[type="range"]:focus{outline:none;box-shadow:none}
+
+select{
+  appearance:none;
+  -webkit-appearance:none;
+  background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+  background-position:calc(100% - 18px) center,calc(100% - 13px) center;
+  background-size:5px 5px,5px 5px;
+  background-repeat:no-repeat;
+  padding-right:32px;
+}
+
 input[type="datetime-local"] {
   -webkit-appearance: none;
   appearance: none;
@@ -138,7 +179,7 @@ input[type="datetime-local"] {
   background-color: #fff;
 }
 
-input:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(90,74,66,0.15)}
+input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(90,74,66,0.15)}
 textarea{resize:vertical;min-height:120px;line-height:1.6}
 .primary{
   border-radius:6px;
@@ -199,61 +240,72 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
 
 .editor-header{
   display:flex;
-  justify-content:space-between;
-  align-items:center;
-  padding:6px 4px 10px;
-  font-size:12px;
-  color:var(--muted);
-  border-bottom:1px solid var(--line);
+  flex-direction:column;
+  gap:6px;
+  padding:8px 10px 10px;
+  background:#ebe6de;
+  border:1px solid var(--line);
+  border-radius:8px;
   margin-bottom:8px;
   flex-shrink:0;
-  gap:12px;
 }
-.editor-header .title-container{
-  display:flex;
-  align-items:center;
-  gap:6px;
-  flex:1;
-  min-width:0;
-}
-.editor-header .title-input{
-  font-family:serif;
-  font-weight:600;
-  color:var(--ink);
-  font-size:15px;
-  border:1px transparent solid;
-  background:transparent;
-  padding:2px 6px;
-  border-radius:4px;
-  width:100%;
-  max-width:240px;
-}
-.editor-header .title-input:hover{border-color:var(--line);background:#fff}
-.editor-header .title-input:focus{border-color:var(--accent);background:#fff}
 
-.editor-header .stats-info{
+.editor-header-top{
+  display:flex;
+  justify-content:flex-end;
+  align-items:center;
+  gap:12px;
+  flex-wrap:wrap;
+  font-size:12px;
+  color:var(--muted);
+}
+
+.stats-info{
   display:flex;
   align-items:center;
-  justify-content:flex-end;
   gap:12px;
   font-variant-numeric:tabular-nums;
-  white-space:nowrap;
-  flex-shrink:0;
+  flex-wrap:wrap;
 }
 .stats-info span b{
   color:var(--ink);
   font-weight:600;
 }
+
+.editor-header-bottom{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+}
+
+.room-title-display{
+  font-family:var(--font-gothic);
+  font-weight:600;
+  color:var(--ink);
+  font-size:16px;
+  word-break:break-all;
+  line-height:1.4;
+  flex:1;
+  min-width:0;
+}
+
 .edit-checkout-btn{
   background:none;
-  border:none;
-  color:var(--muted);
+  border:1px solid var(--line);
+  border-radius:4px;
+  background:#fff;
+  color:var(--ink);
   font-size:11px;
-  padding:2px 4px;
-  text-decoration:underline;
+  padding:4px 8px;
   cursor:pointer;
+  display:inline-flex;
+  align-items:center;
+  gap:2px;
+  flex-shrink:0;
+  transition:background .15s;
 }
-.edit-checkout-btn:hover{color:var(--ink)}
+.edit-checkout-btn:hover{background:var(--accent-btn-hover)}
 
 .editor-main{
   flex:1;
@@ -270,7 +322,7 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   padding:20px;
   background:var(--bg-paper);
   color:var(--ink);
-  font-family:serif;
+  font-family:var(--font-gothic);
   font-size:17px;
   line-height:2.1;
   resize:none;
@@ -303,7 +355,7 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   color:var(--ink);
   padding:8px 0;
   font-size:13px;
-  font-family:serif;
+  font-family:var(--font-gothic);
   text-align:center;
   transition:background .15s;
 }
@@ -363,7 +415,7 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
 .milestone{position:fixed;inset:0;background:rgba(0,0,0,0.6);display:none;place-items:center;z-index:150;padding:20px}
 .milestone.show{display:grid}
 .mbox{max-width:440px;width:100%;background:#fffaf5;color:var(--ink);border-radius:12px;padding:28px;text-align:center;box-shadow:0 15px 50px rgba(0,0,0,0.3)}
-.mbox h2{font-family:serif;font-size:26px;margin:0 0 10px;color:var(--accent)}
+.mbox h2{font-family:var(--font-gothic);font-size:26px;margin:0 0 10px;color:var(--accent)}
 
 @media(max-width:600px){
   .screen-lobby{
@@ -393,23 +445,11 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
     padding-bottom: calc(6px + env(safe-area-inset-bottom));
   }
   .editor-header{
-    flex-direction:column-reverse;
-    align-items:stretch;
+    padding:8px;
     gap:6px;
-    padding-bottom:6px;
   }
-  .editor-header .stats-info{
-    justify-content:flex-end;
-    flex-wrap:wrap;
-    gap:4px 8px;
-    font-size:11px;
-    background:#ebe6de;
-    padding:6px 8px;
-    border-radius:4px;
-  }
-  .editor-header .title-input{
-    max-width:100%;
-    font-size:16px;
+  .room-title-display{
+    font-size:15px;
   }
   #manuscript{
     padding:12px;
@@ -450,8 +490,8 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
       <button class="primary" onclick="showNewProjectModal()">＋ 新規プラン作成</button>
     </header>
     <div class="setup">
-      <div style="font-weight:600;font-size:14px;color:#4a423d;">ご滞在中の作品一覧</div>
-      <div id="projectList" class="project-list-container"></div>
+      <div style="font-weight:600;font-size:14px;color:#4a423d;">ご滞在中の作品一覧 <span style="font-size:11px;font-weight:normal;color:var(--muted);margin-left:6px;">(ドラッグ＆ドロップで並び替えできます)</span></div>
+      <div id="projectList" class="project-list-container" ondragover="allowDrop(event)" ondragleave="removeDragOverStyle(event)"></div>
 
       <div class="grid">
         <button class="secondary" onclick="exportBackupData(true)">全データバックアップ (JSON)</button>
@@ -468,14 +508,17 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
 <section id="write" class="hidden">
   <div class="editor-container">
     <div class="editor-header">
-      <div class="title-container">
-        <input id="roomTitle" class="title-input" title="クリックしてタイトルを変更" placeholder="無題" onchange="updateTitleFromInput()">
+      <div class="editor-header-top">
+        <div class="stats-info">
+          <span>文字数: <b id="count">0</b></span>
+          <span>目標: <b id="goalView">10,000</b></span>
+          <span>進捗: <b id="percent">0%</b></span>
+          <span id="checkoutCountdownContainer">残り: <b id="checkoutCountdown">--:--:--</b></span>
+        </div>
+        <button class="edit-checkout-btn" onclick="showEditProjectModal(db.currentId)">⚙️ 編集</button>
       </div>
-      <div class="stats-info">
-        <span>文字数: <b id="count">0</b></span>
-        <span>目標: <b id="goalView">10,000</b></span>
-        <span>進捗: <b id="percent">0%</b></span>
-        <span id="checkoutCountdownContainer">残り: <b id="checkoutCountdown">--:--:--</b> <button class="edit-checkout-btn" onclick="showEditProjectModal(db.currentId)">⚙️変更</button></span>
+      <div class="editor-header-bottom">
+        <div id="roomTitleDisplay" class="room-title-display">無題</div>
       </div>
     </div>
 
@@ -504,7 +547,35 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
         <span>執筆時間: <span id="timer">00:00:00</span></span>
         <span id="saved">自動保存: 準備中</span>
         <button id="togglePopupBtn" class="secondary" style="padding:3px 8px;font-size:11px;" onclick="togglePopupSetting()">🎉 達成表示: オン</button>
+        <button class="secondary" style="padding:3px 8px;font-size:11px;" onclick="showFontSettings()">Aa 文字設定</button>
         <button class="secondary" style="padding:3px 8px;font-size:11px;" onclick="exportBackupData()">JSONバックアップ</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="fontSettingsOverlay" class="modal-overlay hidden">
+    <div class="modal-box" style="max-width:360px;">
+      <div class="modal-head">
+        <h2>文字設定</h2>
+        <button class="close-btn" onclick="hideFontSettings()">×</button>
+      </div>
+      <div style="display:grid;gap:12px;margin-bottom:16px;">
+        <label>フォント
+          <select id="fontFamilySelect" onchange="previewFontSettings()">
+            <option value="gothic">ゴシック体（初期設定）</option>
+            <option value="meiryo">メイリオ</option>
+            <option value="yugothic">游ゴシック</option>
+            <option value="mincho">明朝体</option>
+          </select>
+        </label>
+        <label>
+          <span class="field-label-row"><span>文字サイズ</span><span id="fontSizeValue">17px</span></span>
+          <input id="fontSizeRange" type="range" min="14" max="26" step="1" oninput="previewFontSettings()">
+        </label>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;">
+        <button class="secondary" onclick="hideFontSettings()">キャンセル</button>
+        <button class="primary" onclick="saveFontSettings()">保存する</button>
       </div>
     </div>
   </div>
@@ -532,7 +603,7 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
     </div>
     <div style="display:grid;gap:12px;margin-bottom:16px;">
       <label>作品名
-        <input id="newTitle" placeholder="作品名を入力します（執筆中も変更可能）">
+        <textarea id="newTitle" style="min-height:80px;" placeholder="作品名を入力します"></textarea>
       </label>
       <label>目標文字数
         <input id="newGoal" type="number" min="1" step="100" value="10000">
@@ -581,6 +652,7 @@ let db = {
 let timerId, autoId;
 let isPasting = false;
 let editingProjectId = null;
+let draggedId = null;
 
 function $(id) { return document.getElementById(id); }
 function fmt(n) { return n.toLocaleString('ja-JP'); }
@@ -608,10 +680,107 @@ function formatDisplayDate(isoStr) {
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+function formatUpdatedAt(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return '';
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function getSafeTitle(rawTitle) {
   const safe = (rawTitle || '無題').replace(/[\\/:*?"<>|]/g, '_').trim();
   return safe || '無題';
 }
+
+function ensureProjectOrder() {
+  const ids = Object.keys(db.projects);
+  if (!Array.isArray(db.projectOrder)) {
+    db.projectOrder = ids.slice().sort((a, b) => (db.projects[b].updatedAt || 0) - (db.projects[a].updatedAt || 0));
+    return;
+  }
+  db.projectOrder = db.projectOrder.filter(id => db.projects[id]);
+  ids.forEach(id => {
+    if (!db.projectOrder.includes(id)) {
+      db.projectOrder.unshift(id);
+    }
+  });
+}
+
+function getOrderedProjects() {
+  ensureProjectOrder();
+  return db.projectOrder.map(id => db.projects[id]).filter(Boolean);
+}
+
+// ドラッグ＆ドロップ関連
+function handleDragStart(e, id) {
+  draggedId = id;
+  e.dataTransfer.effectAllowed = 'move';
+  setTimeout(() => {
+    const el = document.getElementById(`proj_item_${id}`);
+    if (el) el.classList.add('dragging');
+  }, 0);
+}
+
+function handleDragEnd(e, id) {
+  draggedId = null;
+  const el = document.getElementById(`proj_item_${id}`);
+  if (el) el.classList.remove('dragging');
+  document.querySelectorAll('.project-item').forEach(item => {
+    item.classList.remove('drag-over');
+  });
+}
+
+function handleDragOver(e, targetId) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  if (!draggedId || draggedId === targetId) return;
+  
+  const targetEl = document.getElementById(`proj_item_${targetId}`);
+  if (targetEl) {
+    document.querySelectorAll('.project-item').forEach(item => {
+      if (item !== targetEl) item.classList.remove('drag-over');
+    });
+    targetEl.classList.add('drag-over');
+  }
+}
+
+function removeDragOverStyle(e) {
+  document.querySelectorAll('.project-item').forEach(item => {
+    item.classList.remove('drag-over');
+  });
+}
+
+function allowDrop(e) {
+  e.preventDefault();
+}
+
+function handleDrop(e, targetId) {
+  e.preventDefault();
+  removeDragOverStyle(e);
+  if (!draggedId || draggedId === targetId) return;
+
+  ensureProjectOrder();
+  const oldIdx = db.projectOrder.indexOf(draggedId);
+  const newIdx = db.projectOrder.indexOf(targetId);
+
+  if (oldIdx === -1 || newIdx === -1) return;
+
+  db.projectOrder.splice(oldIdx, 1);
+  db.projectOrder.splice(newIdx, 0, draggedId);
+
+  saveData();
+  renderProjectList();
+  toast('並び順を更新しました');
+}
+
+const FONT_STACKS = {
+  gothic: 'var(--font-gothic)',
+  meiryo: 'Meiryo,sans-serif',
+  yugothic: '"Yu Gothic",sans-serif',
+  mincho: '"Hiragino Mincho ProN","Yu Mincho",serif'
+};
+const DEFAULT_MANUSCRIPT_FONT_SIZE = 17;
 
 function loadData() {
   try {
@@ -624,19 +793,60 @@ function loadData() {
     }
   } catch(e) {}
   updatePopupBtnUI();
+  applyManuscriptStyle();
+}
+
+function applyManuscriptStyle() {
+  const el = $('manuscript');
+  if (!el) return;
+  const key = db.settings?.manuscriptFont || 'gothic';
+  const size = db.settings?.manuscriptFontSize || DEFAULT_MANUSCRIPT_FONT_SIZE;
+  el.style.fontFamily = FONT_STACKS[key] || FONT_STACKS.gothic;
+  el.style.fontSize = size + 'px';
+}
+
+function showFontSettings() {
+  const key = db.settings?.manuscriptFont || 'gothic';
+  const size = db.settings?.manuscriptFontSize || DEFAULT_MANUSCRIPT_FONT_SIZE;
+  $('fontFamilySelect').value = key;
+  $('fontSizeRange').value = size;
+  $('fontSizeValue').textContent = size + 'px';
+  $('fontSettingsOverlay').classList.remove('hidden');
+}
+
+function hideFontSettings() {
+  applyManuscriptStyle();
+  $('fontSettingsOverlay').classList.add('hidden');
+}
+
+function previewFontSettings() {
+  const key = $('fontFamilySelect').value;
+  const size = $('fontSizeRange').value;
+  $('fontSizeValue').textContent = size + 'px';
+  const el = $('manuscript');
+  if (el) {
+    el.style.fontFamily = FONT_STACKS[key] || FONT_STACKS.gothic;
+    el.style.fontSize = size + 'px';
+  }
+}
+
+function saveFontSettings() {
+  if (!db.settings) db.settings = {};
+  db.settings.manuscriptFont = $('fontFamilySelect').value;
+  db.settings.manuscriptFontSize = Number($('fontSizeRange').value);
+  saveData();
+  applyManuscriptStyle();
+  $('fontSettingsOverlay').classList.add('hidden');
+  toast('文字設定を保存しました');
 }
 
 function saveData() {
   if (db.currentId && db.projects[db.currentId]) {
     const p = db.projects[db.currentId];
     const writeVisible = !$('write').classList.contains('hidden');
-    // 執筆画面が表示されている時だけ、画面上の入力欄の値をデータに同期する。
-    // 非表示の時（作品一覧に戻っている等）は、#roomTitle等が古い値のまま
-    // 残っている可能性があるため、それで上書きしてしまわないようにする。
     if (writeVisible) {
       p.text = $('manuscript')?.value ?? p.text;
       p.plot = $('plotWork')?.value ?? p.plot;
-      p.title = $('roomTitle')?.value ?? p.title;
     }
     p.updatedAt = Date.now();
   }
@@ -666,7 +876,7 @@ function renderProjectList() {
   const container = $('projectList');
   container.innerHTML = '';
 
-  const list = Object.values(db.projects).sort((a,b) => b.updatedAt - a.updatedAt);
+  const list = getOrderedProjects();
 
   if (list.length === 0) {
     container.innerHTML = `
@@ -677,22 +887,34 @@ function renderProjectList() {
     return;
   }
 
-  list.forEach(p => {
+  list.forEach((p) => {
     const count = [...(p.text || '')].length;
     const item = document.createElement('div');
     item.className = 'project-item';
+    item.id = `proj_item_${p.id}`;
+    item.draggable = true;
     
+    item.addEventListener('dragstart', (e) => handleDragStart(e, p.id));
+    item.addEventListener('dragend', (e) => handleDragEnd(e, p.id));
+    item.addEventListener('dragover', (e) => handleDragOver(e, p.id));
+    item.addEventListener('drop', (e) => handleDrop(e, p.id));
+
     let timeStr = '';
     if (p.checkIn || p.checkOut) {
       const inStr = p.checkIn ? formatDisplayDate(p.checkIn) : '未設定';
       const outStr = p.checkOut ? formatDisplayDate(p.checkOut) : '未設定';
-      timeStr = ` 滞在: ${inStr} 〜 ${outStr}`;
+      timeStr = `滞在: ${inStr} 〜 ${outStr}`;
     }
+    const updatedStr = p.updatedAt ? `最終更新: ${formatUpdatedAt(p.updatedAt)}` : '';
 
     item.innerHTML = `
+      <div class="drag-handle" title="ドラッグして並び替え">⠿</div>
       <div class="project-info">
         <div class="project-title-text">${escapeHtml(p.title)}</div>
-        <div class="project-meta-text">${fmt(count)} 字 / 目標 ${fmt(p.goal)} 字 (${Math.min(100, Math.floor(count/p.goal*100))}%)${timeStr}</div>
+        <div class="project-meta-text">
+          <span>${fmt(count)} 字 / 目標 ${fmt(p.goal)} 字 (${Math.min(100, Math.floor(count/p.goal*100))}%)${timeStr ? ' / ' + timeStr : ''}</span>
+          ${updatedStr ? `<span>${updatedStr}</span>` : ''}
+        </div>
       </div>
       <div class="project-actions">
         <button class="secondary" onclick="openProject('${p.id}')">執筆部屋へ</button>
@@ -730,7 +952,7 @@ function openProject(id) {
   db.currentId = id;
   const p = db.projects[id];
 
-  $('roomTitle').value = p.title || '無題';
+  $('roomTitleDisplay').textContent = p.title || '無題';
   $('goalView').textContent = fmt(p.goal || 10000);
   $('manuscript').value = p.text || '';
   $('plotWork').value = p.plot || '';
@@ -810,19 +1032,14 @@ function saveProjectModal() {
     p.plot = plot;
     p.updatedAt = Date.now();
 
-    // saveData()はroomTitle等の画面表示値でデータを上書きするため、
-    // 必ず先に画面側のDOMを新しい値へ同期してからsaveData()を呼ぶ。
-    // （順序を逆にすると、上で設定した新しいタイトルが古い表示値で
-    //   上書きされて消えてしまう）
     if (db.currentId === editingProjectId && !$('write').classList.contains('hidden')) {
-      $('roomTitle').value = title;
+      $('roomTitleDisplay').textContent = title;
       $('goalView').textContent = fmt(goal);
       $('plotWork').value = plot;
       updateTimer();
       update();
     }
 
-    // 確実にデータを保持したあとにモーダルを閉じる
     saveData();
     hideNewProjectModal();
     renderProjectList();
@@ -841,6 +1058,9 @@ function saveProjectModal() {
       lastMilestone: 0,
       updatedAt: Date.now()
     };
+    ensureProjectOrder();
+    db.projectOrder = db.projectOrder.filter(pid => pid !== id);
+    db.projectOrder.unshift(id);
 
     hideNewProjectModal();
     openProject(id);
@@ -852,6 +1072,9 @@ function deleteProject(id) {
   const p = db.projects[id];
   if (confirm(`作品「${p.title}」の合宿データを削除しますか？`)) {
     delete db.projects[id];
+    if (Array.isArray(db.projectOrder)) {
+      db.projectOrder = db.projectOrder.filter(pid => pid !== id);
+    }
     if (db.currentId === id) {
       const remainingIds = Object.keys(db.projects);
       db.currentId = remainingIds.length > 0 ? remainingIds[0] : null;
@@ -859,14 +1082,6 @@ function deleteProject(id) {
     saveData();
     renderProjectList();
     toast('データを削除しました');
-  }
-}
-
-function updateTitleFromInput() {
-  const newTitle = $('roomTitle').value.trim() || '無題';
-  if (db.currentId && db.projects[db.currentId]) {
-    db.projects[db.currentId].title = newTitle;
-    saveData();
   }
 }
 
