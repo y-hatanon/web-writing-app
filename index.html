@@ -343,6 +343,7 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   flex-shrink:0;
   padding-bottom:env(safe-area-inset-bottom);
 }
+
 .symbol-bar{
   display:grid;
   position: relative;
@@ -350,12 +351,22 @@ textarea{resize:vertical;min-height:120px;line-height:1.6}
   gap:6px;
 }
 
-/* キーボード表示時にJSで付与するクラス */
+.symbol-bar {
+  display: grid;
+  /* ボタンの列数を自動調整、または均等な幅（例: 4列や5列、あるいは自動均等配置）にする場合 */
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  box-sizing: border-box;
+}
+
+/* キーボード表示時のフロート状態（先ほどのクラスと併用する場合） */
 .symbol-bar.is-floating {
   position: fixed;
   bottom: 0;
   left: 0;
+  width: 100%;
   z-index: 9999;
+  background: #ffffff;
   box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.15);
   padding: 6px 8px;
 }
@@ -1222,6 +1233,20 @@ function insertSymbol(sym) {
   update();
   saveData();
   el.focus();
+}
+
+if (window.visualViewport) {
+  const symbolBar = document.querySelector('.symbol-bar');
+  const threshold = 150; // キーボードと判定する高さの差分
+
+  window.visualViewport.addEventListener('resize', () => {
+    // 画面の高さに対してビジュアルビューポートが大幅に縮んだ場合＝キーボード表示中
+    if (window.innerHeight - window.visualViewport.height > threshold) {
+      symbolBar.classList.add('is-floating');
+    } else {
+      symbolBar.classList.remove('is-floating');
+    }
+  });
 }
 
 function insertBracket(open, close) {
