@@ -493,7 +493,7 @@ textarea.title-textarea {
 /* 記号入力バー */
 .symbol-bar {
   display: grid;
-  grid-template-columns: repeat(4, 1fr) 0.62fr 0.62fr;
+  grid-template-columns: repeat(5, 1fr) 0.62fr 0.62fr;
   gap: 8px;
   width: 100%;
 }
@@ -675,7 +675,7 @@ textarea.title-textarea {
   /* 記号バーは、SPの通常表示（キーボード非表示）時は隠し、
      キーボード表示中のみ表示する。PC（このメディアクエリの外）では
      常時表示のまま変更しない。 */
-  .symbol-bar{ display:none; grid-template-columns: repeat(4, 1fr) 0.55fr 0.55fr; gap:4px; }
+  .symbol-bar{ display:none; grid-template-columns: repeat(5, 1fr) 0.55fr 0.55fr; gap:4px; }
   body.keyboard-open .symbol-bar{ display:grid; }
   .symbol-btn{ padding:5px 0; font-size:12px; }
   .history-btn-label{ display:none; }
@@ -751,20 +751,21 @@ textarea.title-textarea {
       <!-- 上段：ライトな記号入力ボタン -->
       <div class="symbol-bar">
         <button class="symbol-btn" tabindex="3" onclick="insertSymbol('――')">――</button>
-        <button class="symbol-btn" tabindex="4" onclick="insertBracket('「', '」')">「」</button>
-        <button class="symbol-btn" tabindex="5" onclick="insertBracket('『', '』')">『』</button>
-        <button class="symbol-btn" tabindex="6" onclick="insertBracket('（', '）')">（）</button>
-        <button class="symbol-btn history-btn" tabindex="7" onclick="undoManuscript()" aria-label="本文の入力を1つ戻す" title="本文の入力を1つ戻す">↶<span class="history-btn-label"> 戻る</span></button>
-        <button class="symbol-btn history-btn" tabindex="8" onclick="redoManuscript()" aria-label="本文の入力を1つ進める" title="本文の入力を1つ進める">↷<span class="history-btn-label"> 進む</span></button>
+        <button class="symbol-btn" tabindex="4" onclick="insertSymbol('……')">……</button>
+        <button class="symbol-btn" tabindex="5" onclick="insertBracket('「', '」')">「」</button>
+        <button class="symbol-btn" tabindex="6" onclick="insertBracket('『', '』')">『』</button>
+        <button class="symbol-btn" tabindex="7" onclick="insertBracket('（', '）')">（）</button>
+        <button class="symbol-btn history-btn" tabindex="8" onclick="undoManuscript()" aria-label="本文の入力を1つ戻す" title="本文の入力を1つ戻す">↶<span class="history-btn-label"> 戻る</span></button>
+        <button class="symbol-btn history-btn" tabindex="9" onclick="redoManuscript()" aria-label="本文の入力を1つ進める" title="本文の入力を1つ進める">↷<span class="history-btn-label"> 進む</span></button>
       </div>
 
       <!-- 下段：目立つダークブラウンのメイン操作ボタン -->
       <div class="action-bar">
         <div class="action-group">
-          <button class="action-btn" tabindex="9" onclick="saveNow()">local保存</button>
-          <button class="action-btn" tabindex="10" onclick="exportTxt()">txt書き出し</button>
-          <button class="action-btn" tabindex="11" onclick="showPlot()">プロット</button>
-          <button class="action-btn" tabindex="12" onclick="showProjectList()">作品一覧</button>
+          <button class="action-btn" tabindex="10" onclick="saveNow()">local保存</button>
+          <button class="action-btn" tabindex="11" onclick="exportTxt()">txt書き出し</button>
+          <button class="action-btn" tabindex="12" onclick="showPlot()">プロット</button>
+          <button class="action-btn" tabindex="13" onclick="showProjectList()">作品一覧</button>
         </div>
       </div>
 
@@ -777,8 +778,8 @@ textarea.title-textarea {
           <span id="storageWarningWrite" class="hidden storage-warning-inline"></span>
         </div>
         <div class="footer-meta-btns">
-          <button class="secondary" tabindex="13" style="padding:2px 8px;font-size:11px;" onclick="showFontSettings()">Aa 文字設定</button>
-          <button class="secondary backup-btn" tabindex="14" style="padding:2px 8px;font-size:11px;" onclick="exportBackupData()">JSONバックアップ</button>
+          <button class="secondary" tabindex="14" style="padding:2px 8px;font-size:11px;" onclick="showFontSettings()">Aa 文字設定</button>
+          <button class="secondary backup-btn" tabindex="15" style="padding:2px 8px;font-size:11px;" onclick="exportBackupData()">JSONバックアップ</button>
         </div>
       </div>
     </div>
