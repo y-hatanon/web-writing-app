@@ -1555,6 +1555,44 @@ function insertBracket(open, close) {
   const el = $('manuscript');
   if (!el) return;
 
+  const isSP = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  ensureManuscriptSelection();
+
+  const val = el.value;
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+
+  // SPかつ選択範囲がなく、カーソル位置が行頭全角スペースの直後（Enter直後）の場合の特別切り分け
+  if (isSP && start === end) {
+    const lineStart = val.lastIndexOf('\n', start - 1) + 1;
+    let spacesCount = 0;
+    while (val[lineStart + spacesCount] === FULL_WIDTH_SPACE) {
+      spacesCount++;
+    }
+
+    // カーソルが行頭全角スペースの直後（例: Enter押下直後の  | の状態）にあるか判定
+    if (spacesCount > 0 && start === lineStart + spacesCount) {
+      const replaceStart = lineStart;
+      const replaceEnd = lineStart + spacesCount;
+      const insertText = open + close;
+
+      // 明示的な数値位置へsetRangeTextで挿入
+      el.setRangeText(insertText, replaceStart, replaceEnd, 'end');
+
+      // カーソル位置をカッコの間に設定
+      const newPos = replaceStart + open.length;
+      el.setSelectionRange(newPos, newPos);
+
+      savedCaretStart = newPos;
+      savedCaretEnd = newPos;
+
+      update();
+      saveData();
+      return;
+    }
+  }
+
+  // --- 従来どおりの動作（PC、またはSPでEnter直後以外の通常挿入） ---
   stripLeadingSpacesAtCursor();
 
   const currentStart = el.selectionStart;
@@ -1803,25 +1841,11 @@ function toast(t) {
 $('manuscript').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.isComposing) {
     e.preventDefault();
-    // 【重要】ここで即座にexecCommandを呼ぶと、モバイル環境では
-    // 「Enterキー押下」に対するネイティブ側（IME／テキスト入力
-    // コネクション）の後処理がまだ終わっていないタイミングと重なり、
-    // 直後に記号ボタンでexecCommandを呼んだ際、JS側で正しく
-    // 書き換えたselectionStart/Endではなく、ネイティブ側が保持する
-    // 古いカーソル位置（Enter前の行末）に挿入されてしまう不具合が
-    // 実機で確認されている。
-    // setTimeoutで1tick遅らせ、ブラウザ側の後処理を先に完了させて
-    // から改行＋全角スペースを挿入することで、この不整合を避ける。
-    // PC・SPともに遅延は体感できないごく短時間のため、見た目の
-    // 挙動（Enterで即座に改行される）自体は変化しない。
-    const target = e.target;
-    setTimeout(() => {
-      insertTextPreservingUndo(target, '\n' + FULL_WIDTH_SPACE);
-      update();
-      saveData();
-      scrollTextareaToCaret(target);
-      saveManuscriptCaret();
-    }, 0);
+    insertTextPreservingUndo(e.target, '\n' + FULL_WIDTH_SPACE);
+    update();
+    saveData();
+    scrollTextareaToCaret(e.target);
+    saveManuscriptCaret();
   }
 });
 
