@@ -1688,13 +1688,6 @@ window.addEventListener('orientationchange', updateAppHeight);
 loadData();
 renderProjectList();
 
-const manuscript = document.getElementById('manuscript');
-
-manuscript.addEventListener('input', () => {
-  // ブラウザ標準機能でカーソル位置（選択領域）を画面内に収める
-  manuscript.blur();
-  manuscript.focus();
-});
 </script>
 </body>
 </html>
