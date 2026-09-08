@@ -672,7 +672,11 @@ textarea.title-textarea {
   /* 操作ボタン */
   .action-group{ display:grid; grid-template-columns:repeat(2, 1fr); gap:6px; }
   .action-btn{ padding:8px 0; font-size:12px; }
-  .symbol-bar{ grid-template-columns: repeat(4, 1fr) 0.55fr 0.55fr; gap:4px; }
+  /* 記号バーは、SPの通常表示（キーボード非表示）時は隠し、
+     キーボード表示中のみ表示する。PC（このメディアクエリの外）では
+     常時表示のまま変更しない。 */
+  .symbol-bar{ display:none; grid-template-columns: repeat(4, 1fr) 0.55fr 0.55fr; gap:4px; }
+  body.keyboard-open .symbol-bar{ display:grid; }
   .symbol-btn{ padding:5px 0; font-size:12px; }
   .history-btn-label{ display:none; }
   .history-btn{ font-size:16px; padding:5px 0; }
@@ -1499,15 +1503,16 @@ function saveManuscriptCaret() {
 }
 
 // 記号ボタン等の操作直前に呼び出す。
-// manuscriptが現在フォーカスされていない（＝Tab等で記号ボタン側へ
-// フォーカスが移っている）場合、退避しておいたカーソル位置を
-// manuscriptのselectionRangeへ復元してから後続の処理へ渡す。
-// これにより、フォーカスが本文入力欄から離れていても、
-// 記号は必ず「直前にカーソルがあった位置」へ挿入される。
+// 「現在フォーカスが本文入力欄にあるかどうか」で分岐すると、
+// フォーカス状態の判定タイミングによっては直前のカーソル位置を
+// 取りこぼすことがあったため、savedCaretStart/Endが記録されている場合は
+// フォーカス状態に関わらず常にそれをmanuscriptのselectionRangeへ同期する。
+// savedCaretStart/Endは、本文入力欄でのカーソル移動・入力・blur等の
+// タイミングで随時更新しているため、常に最新の正しい位置を指している。
 function ensureManuscriptSelection() {
   const el = $('manuscript');
   if (!el) return;
-  if (document.activeElement !== el && savedCaretStart !== null && savedCaretEnd !== null) {
+  if (savedCaretStart !== null && savedCaretEnd !== null) {
     const max = el.value.length;
     const start = Math.min(savedCaretStart, max);
     const end = Math.min(savedCaretEnd, max);
@@ -1814,33 +1819,51 @@ $('manuscript').addEventListener('keydown', (e) => {
     update();
     saveData();
     scrollTextareaToCaret(e.target);
+    // 改行直後のカーソル位置を確実に記録しておく（保険）。
+    // insertTextPreservingUndo内でも保存しているが、Enter処理の直後という
+    // タイミングで明示的に再保存することで、記号ボタン初回押下時に
+    // 古い位置が使われる事態を防ぐ。
+    saveManuscriptCaret();
   }
 });
 
-// Tab等でフォーカスが記号ボタン側へ移る直前に、カーソル位置を退避しておく。
+// 本文入力欄でのカーソル移動・入力・フォーカス解除のたびに、
+// 現在のカーソル位置（selectionStart/End）を退避しておく。
+// blurのタイミングだけに頼ると、記号ボタン側でmousedownの既定動作を
+// 止めてblurが発生しなくなったケースなどで、直前の位置を
+// 取りこぼす場合があるため、複数のタイミングで冗長に保存する。
+$('manuscript').addEventListener('keyup', saveManuscriptCaret);
+$('manuscript').addEventListener('click', saveManuscriptCaret);
+$('manuscript').addEventListener('mouseup', saveManuscriptCaret);
+$('manuscript').addEventListener('select', saveManuscriptCaret);
 $('manuscript').addEventListener('blur', saveManuscriptCaret);
 
-// 記号バーのボタン（――／「」／『』／（）／↶／↷）をマウスクリックやタップで
+// 記号バーのボタン（――／「」／『』／（）／↶／↷）をマウスクリックで
 // 押した場合、本文入力欄からフォーカスが外れないようにする。
 // フォーカスが外れるとスマホでは仮想キーボードが一旦閉じてから
 // insertSymbol等の内部でel.focus()により再度開く、という開閉が発生し、
 // これがvisualViewportの高さを短時間で何度も変化させ、連打時の
 // レイアウト崩れ（keyboard-open判定のちらつき）の原因になっていた。
-// mousedown/touchstartの既定動作（フォーカス移動）を止めることで、
+// mousedownの既定動作（フォーカス移動）だけを止めることで、
 // 本文入力欄のフォーカスとキーボード表示状態を維持したまま
 // ボタンのclickイベント（記号挿入等）だけを実行させる。
+//
+// 注意：touchstartに対して同様にpreventDefault()すると、実機（特にiOS）で
+// タップ操作そのもの（続くclickイベントの発火）が阻害され、記号ボタンが
+// 一切反応しなくなる不具合が確認されたため、touchstartへの介入は行わない。
+// タッチ操作時は、ブラウザが生成するmousedownイベント（タップ後に発火する）
+// のpreventDefaultのみに委ねる。
+//
 // なお、Tabキーによるキーボードフォーカス移動はこの対象外であり、
 // そちらは別途カーソル位置の退避・復元（ensureManuscriptSelection）で対応する。
 (function () {
   const bar = document.querySelector('.symbol-bar');
   if (!bar) return;
-  const keepManuscriptFocus = (e) => {
+  bar.addEventListener('mousedown', (e) => {
     if (e.target.closest('.symbol-btn')) {
       e.preventDefault();
     }
-  };
-  bar.addEventListener('mousedown', keepManuscriptFocus);
-  bar.addEventListener('touchstart', keepManuscriptFocus, { passive: false });
+  });
 })();
 
 $('manuscript').addEventListener('paste', () => {
