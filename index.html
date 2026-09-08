@@ -675,58 +675,28 @@ textarea.title-textarea {
   .footer-meta-group { gap:8px; }
   .footer-meta-btns { margin-left:auto; }
 }
+
 /* --- スマホ表示のみ適用 (max-width: 600px) --- */
 @media (max-width: 600px) {
-  /* スマホ時のみ全体を縦スクロール可能にして下部ボタンをキーボード下に逃がす */
+  /* スマホ時のみヘッダー・フッターを固定し、入力エリアだけを動かす */
   .editor-container {
     padding: 8px 10px;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  /* ① 本文入力(textarea)にフォーカス時、ヘッダーを畳んで隠す */
-  .editor-header {
-    transition: max-height 0.25s ease, opacity 0.2s ease, padding 0.25s ease, margin 0.25s ease;
-    max-height: 200px;
-    opacity: 1;
-    overflow: hidden;
-  }
-
-  .editor-container:has(#manuscript:focus) .editor-header {
-    max-height: 0;
-    opacity: 0;
-    margin-bottom: 0;
-    padding-top: 0;
-    padding-bottom: 0;
-    border: none;
-  }
-
-  /* 入力欄の表示領域を画面いっぱいに拡大 */
-  .editor-main {
-    flex: 1 0 auto;
-    min-height: calc(100vh - 110px);
+    height: 100%;
   }
 
   #manuscript {
-    padding: 14px;
-    font-size: 16px !important; /* iOSの自動ズーム防止 */
-    line-height: 1.9;
+    padding: 12px;
+    font-size: 16px !important; /* iOS自動ズーム防止 */
+    line-height: 1.8;
   }
 
-  /* ② 記号バーのみ画面下部（キーボード直上）に固定表示 */
+  /* 記号バーを下部に固定 */
   .symbol-bar {
     position: sticky;
     bottom: 0;
     background: var(--bg-editor);
-    padding: 6px 0;
+    padding: 4px 0;
     z-index: 10;
-    gap: 6px;
-  }
-
-  /* 保存ボタン群などは記号バーの下に入り、初期状態では下に隠れる */
-  .action-bar,
-  .footer-meta {
-    margin-top: 6px;
   }
 }
 </style>
@@ -1720,47 +1690,11 @@ renderProjectList();
 
 const manuscript = document.getElementById('manuscript');
 
-// カーソル（キャレット）の位置まで視界を自動で追従させる処理
-function scrollToCursor() {
-  requestAnimationFrame(() => {
-    // 現在のカーソル位置（文字数 index）を取得
-    const selectionEnd = manuscript.selectionEnd;
-    
-    // テキストを行ごとに分割し、カーソルが何行目にあるか計算
-    const textBeforeCursor = manuscript.value.substring(0, selectionEnd);
-    const lineCount = textBeforeCursor.split('\n').length;
-    
-    // 1行あたりの高さ（line-height 1.9 × font-size 16px ≒ 約30px）
-    const lineHeight = 30;
-    const cursorY = lineCount * lineHeight;
-    
-    // manuscript 内のスクロール位置をカーソル行に合わせて微調整
-    const visibleTop = manuscript.scrollTop;
-    const visibleBottom = visibleTop + manuscript.clientHeight;
-    
-    if (cursorY > visibleBottom - 40) {
-      manuscript.scrollTop = cursorY - manuscript.clientHeight + 60;
-    } else if (cursorY < visibleTop + 40) {
-      manuscript.scrollTop = Math.max(0, cursorY - 40);
-    }
-
-    // スマホ表示（親コンテナがスクロールする場合）の追従処理
-    const container = document.querySelector('.editor-container');
-    if (container && window.innerWidth <= 600) {
-      const containerBottom = container.scrollTop + container.clientHeight;
-      const manuscriptRect = manuscript.getBoundingClientRect();
-      const containerRect = container.getBoundingClientRect();
-      
-      // カーソル周辺の位置が親コンテナの下に隠れそうになったら押し下げる
-      if (manuscriptRect.bottom > containerRect.bottom) {
-        container.scrollTop += (manuscriptRect.bottom - containerRect.bottom + 20);
-      }
-    }
-  });
-}
-
-// 入力時およびエンター（改行）時にカーソル位置へ追従
-manuscript.addEventListener('input', scrollToCursor);
+manuscript.addEventListener('input', () => {
+  // ブラウザ標準機能でカーソル位置（選択領域）を画面内に収める
+  manuscript.blur();
+  manuscript.focus();
+});
 </script>
 </body>
 </html>
