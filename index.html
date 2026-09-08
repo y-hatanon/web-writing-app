@@ -878,15 +878,15 @@ let timerId, autoId;
 let isPasting = false;
 let editingProjectId = null;
 
+// 本文入力欄（manuscript）が記号ボタン等へのフォーカス移動でblurした場合に、
+// 直前のカーソル位置（selectionStart/End）を退避しておくための変数。
+// Tabキーで記号ボタンへ移動→クリックした際、textareaのカーソル位置が
+// 正しく復元されないまま記号が挿入される不具合を防ぐために使用する。
 let savedCaretStart = null;
 let savedCaretEnd = null;
 let draggedId = null;
 let saveFailed = false;
 const STORAGE_WARN_THRESHOLD = 4.5 * 1024 * 1024; // 目安5MBに対する警告ライン
-
-// スマートフォン（タッチ環境）の分岐フラグ
-const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-let spPendingEnter = false;
 
 function $(id) { return document.getElementById(id); }
 function fmt(n) { return n.toLocaleString('ja-JP'); }
@@ -1408,6 +1408,9 @@ function saveNow() {
   toast('原稿を保存しました');
 }
 
+// キャレット（カーソル）の実際のピクセル位置を、隠しミラー要素で計測し、
+// 表示範囲外にある場合だけ必要最小限スクロールする。
+// 「常に最下部までスクロール」ではなく、実際のカーソル位置を考慮する。
 function scrollTextareaToCaret(el) {
   const caretIndex = el.selectionStart;
   const style = window.getComputedStyle(el);
@@ -1467,6 +1470,7 @@ function update() {
   $('percent').textContent = Math.floor(n / g * 100) + '%';
 }
 
+// テキストをUndo/Redo可能な形で挿入する共通ヘルパー。
 function insertTextPreservingUndo(el, text) {
   el.focus();
   const start = el.selectionStart;
@@ -1551,24 +1555,64 @@ function insertBracket(open, close) {
   const el = $('manuscript');
   if (!el) return;
 
-  stripLeadingSpacesAtCursor();
+  const isSP = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  ensureManuscriptSelection();
 
+  const val = el.value;
   const start = el.selectionStart;
   const end = el.selectionEnd;
-  const selectedText = el.value.substring(start, end);
+
+  // SPかつ選択範囲がなく、カーソル位置が行頭全角スペースの直後（Enter直後）の場合の特別切り分け
+  if (isSP && start === end) {
+    const lineStart = val.lastIndexOf('\n', start - 1) + 1;
+    let spacesCount = 0;
+    while (val[lineStart + spacesCount] === FULL_WIDTH_SPACE) {
+      spacesCount++;
+    }
+
+    // カーソルが行頭全角スペースの直後（例: Enter押下直後の  | の状態）にあるか判定
+    if (spacesCount > 0 && start === lineStart + spacesCount) {
+      const replaceStart = lineStart;
+      const replaceEnd = lineStart + spacesCount;
+      const insertText = open + close;
+
+      // 明示的な数値位置へsetRangeTextで挿入
+      el.setRangeText(insertText, replaceStart, replaceEnd, 'end');
+
+      // カーソル位置をカッコの間に設定
+      const newPos = replaceStart + open.length;
+      el.setSelectionRange(newPos, newPos);
+
+      savedCaretStart = newPos;
+      savedCaretEnd = newPos;
+
+      update();
+      saveData();
+      return;
+    }
+  }
+
+  // --- 従来どおりの動作（PC、またはSPでEnter直後以外の通常挿入） ---
+  stripLeadingSpacesAtCursor();
+
+  const currentStart = el.selectionStart;
+  const currentEnd = el.selectionEnd;
+  const selectedText = el.value.substring(currentStart, currentEnd);
 
   insertTextPreservingUndo(el, open + selectedText + close);
 
-  if (start === end) {
-    const newPos = start + open.length;
+  if (currentStart === currentEnd) {
+    const newPos = currentStart + open.length;
     el.setSelectionRange(newPos, newPos);
   } else {
-    el.setSelectionRange(start + open.length, start + open.length + selectedText.length);
+    el.setSelectionRange(currentStart + open.length, currentStart + open.length + selectedText.length);
   }
 
   update();
   saveData();
 }
+
+// --- Tabキー制御：通常画面の完全ループ ＋ モーダルのフォーカストラップ ---
 
 const MODAL_IDS = ['fontSettingsOverlay', 'plotOverlay', 'newProjectOverlay'];
 let modalPreviousFocus = null;
@@ -1794,27 +1838,14 @@ function toast(t) {
   setTimeout(() => e.classList.remove('show'), 1800);
 }
 
-// SPにおけるネイティブ改行後の全角スペース補填フラグの検出
-$('manuscript').addEventListener('beforeinput', (e) => {
-  if (isTouchDevice && e.inputType === 'insertLineBreak' && !e.isComposing) {
-    spPendingEnter = true;
-  }
-});
-
 $('manuscript').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.isComposing) {
-    if (isTouchDevice) {
-      // SPの場合はネイティブEnter処理を許可するため e.preventDefault() を行わない
-      spPendingEnter = true;
-    } else {
-      // PCは従来通りの動作を保持
-      e.preventDefault();
-      insertTextPreservingUndo(e.target, '\n' + FULL_WIDTH_SPACE);
-      update();
-      saveData();
-      scrollTextareaToCaret(e.target);
-      saveManuscriptCaret();
-    }
+    e.preventDefault();
+    insertTextPreservingUndo(e.target, '\n' + FULL_WIDTH_SPACE);
+    update();
+    saveData();
+    scrollTextareaToCaret(e.target);
+    saveManuscriptCaret();
   }
 });
 
@@ -1846,13 +1877,7 @@ $('manuscript').addEventListener('paste', () => {
   setTimeout(() => { isPasting = false; }, 100);
 });
 
-$('manuscript').addEventListener('input', (e) => { 
-  if (isTouchDevice && spPendingEnter) {
-    spPendingEnter = false;
-    // ネイティブ改行が入った直後の位置へ全角スペースのみを挿入
-    insertTextPreservingUndo(e.target, FULL_WIDTH_SPACE);
-    scrollTextareaToCaret(e.target);
-  }
+$('manuscript').addEventListener('input', () => { 
   update(); 
   saveData(); 
   saveManuscriptCaret();
