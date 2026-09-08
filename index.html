@@ -1540,9 +1540,57 @@ function stripLeadingSpacesAtCursor() {
   return true;
 }
 
+// SPでEnter直後に自動挿入された行頭全角スペースだけを、1回の編集コマンドで置換する。
+// 空文字での削除と記号挿入を別々に実行すると、iOS等でネイティブの編集位置が
+// Enter前の行末へ戻ることがあるため、この限定経路では中間コマンドを作らない。
+function replaceAutoIndentOnMobile(text) {
+  const el = $('manuscript');
+  if (!el) return null;
+
+  const isSP = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  if (!isSP) return null;
+
+  ensureManuscriptSelection();
+  const val = el.value;
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+  if (start !== end) return null;
+
+  const lineStart = val.lastIndexOf('\n', start - 1) + 1;
+  let spacesCount = 0;
+  while (val[lineStart + spacesCount] === FULL_WIDTH_SPACE) {
+    spacesCount++;
+  }
+  if (spacesCount === 0 || start !== lineStart + spacesCount) return null;
+
+  el.focus();
+  el.setSelectionRange(lineStart, lineStart + spacesCount);
+  let ok = false;
+  try {
+    ok = document.execCommand('insertText', false, text);
+  } catch (e) {
+    ok = false;
+  }
+  if (!ok) return null;
+
+  const endPos = lineStart + text.length;
+  if (el.selectionStart !== endPos || el.selectionEnd !== endPos) {
+    el.setSelectionRange(endPos, endPos);
+  }
+  savedCaretStart = el.selectionStart;
+  savedCaretEnd = el.selectionEnd;
+  return { lineStart, endPos };
+}
+
 function insertSymbol(symbol) {
   const el = $('manuscript');
   if (!el) return;
+
+  if (replaceAutoIndentOnMobile(symbol)) {
+    update();
+    saveData();
+    return;
+  }
 
   stripLeadingSpacesAtCursor();
   insertTextPreservingUndo(el, symbol);
@@ -1555,41 +1603,15 @@ function insertBracket(open, close) {
   const el = $('manuscript');
   if (!el) return;
 
-  const isSP = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-  ensureManuscriptSelection();
-
-  const val = el.value;
-  const start = el.selectionStart;
-  const end = el.selectionEnd;
-
-  // SPかつ選択範囲がなく、カーソル位置が行頭全角スペースの直後（Enter直後）の場合の特別切り分け
-  if (isSP && start === end) {
-    const lineStart = val.lastIndexOf('\n', start - 1) + 1;
-    let spacesCount = 0;
-    while (val[lineStart + spacesCount] === FULL_WIDTH_SPACE) {
-      spacesCount++;
-    }
-
-    // カーソルが行頭全角スペースの直後（例: Enter押下直後の  | の状態）にあるか判定
-    if (spacesCount > 0 && start === lineStart + spacesCount) {
-      const replaceStart = lineStart;
-      const replaceEnd = lineStart + spacesCount;
-      const insertText = open + close;
-
-      // 明示的な数値位置へsetRangeTextで挿入
-      el.setRangeText(insertText, replaceStart, replaceEnd, 'end');
-
-      // カーソル位置をカッコの間に設定
-      const newPos = replaceStart + open.length;
+  const mobileReplacement = replaceAutoIndentOnMobile(open + close);
+  if (mobileReplacement) {
+    const newPos = mobileReplacement.lineStart + open.length;
       el.setSelectionRange(newPos, newPos);
-
-      savedCaretStart = newPos;
-      savedCaretEnd = newPos;
-
-      update();
-      saveData();
-      return;
-    }
+    savedCaretStart = newPos;
+    savedCaretEnd = newPos;
+    update();
+    saveData();
+    return;
   }
 
   // --- 従来どおりの動作（PC、またはSPでEnter直後以外の通常挿入） ---
