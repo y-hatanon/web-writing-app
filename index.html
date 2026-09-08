@@ -660,6 +660,9 @@ textarea.title-textarea {
   .editor-header{ padding:10px 12px; gap:4px; margin-bottom:8px; }
   .stats-info{ width:100%; justify-content:flex-end; font-size:11px; gap:8px 10px; }
 
+  /* キーボード表示中：タイトル行を隠して本文入力欄を広げる（記号ボタン列は維持） */
+  body.keyboard-open .editor-header-bottom{ display:none; }
+
   /* 執筆エリア */
   .editor-container{ padding:8px 10px; }
   #manuscript{ padding:14px; font-size:16px; line-height:1.9; }
@@ -667,37 +670,15 @@ textarea.title-textarea {
   /* 操作ボタン */
   .action-group{ display:grid; grid-template-columns:repeat(2, 1fr); gap:6px; }
   .action-btn{ padding:8px 0; font-size:12px; }
-  .symbol-bar{ gap:6px; }
+  .symbol-bar{ grid-template-columns: repeat(4, 1fr) 0.55fr 0.55fr; gap:4px; }
   .symbol-btn{ padding:5px 0; font-size:12px; }
+  .history-btn-label{ display:none; }
+  .history-btn{ font-size:16px; padding:5px 0; }
 
   /* 最下部メタ情報最適化 */
   .footer-meta{ justify-content:space-between; gap:6px; font-size:10.5px; }
   .footer-meta-group { gap:8px; }
   .footer-meta-btns { margin-left:auto; }
-}
-
-/* --- スマホ表示のみ適用 (max-width: 600px) --- */
-@media (max-width: 600px) {
-  /* スマホ時のみヘッダー・フッターを固定し、入力エリアだけを動かす */
-  .editor-container {
-    padding: 8px 10px;
-    height: 100%;
-  }
-
-  #manuscript {
-    padding: 12px;
-    font-size: 16px !important; /* iOS自動ズーム防止 */
-    line-height: 1.8;
-  }
-
-  /* 記号バーを下部に固定 */
-  .symbol-bar {
-    position: sticky;
-    bottom: 0;
-    background: var(--bg-editor);
-    padding: 4px 0;
-    z-index: 10;
-  }
 }
 </style>
 </head>
@@ -767,8 +748,8 @@ textarea.title-textarea {
         <button class="symbol-btn" tabindex="4" onclick="insertBracket('「', '」')">「」</button>
         <button class="symbol-btn" tabindex="5" onclick="insertBracket('『', '』')">『』</button>
         <button class="symbol-btn" tabindex="6" onclick="insertBracket('（', '）')">（）</button>
-        <button class="symbol-btn history-btn" tabindex="7" onclick="undoManuscript()" title="本文の入力を1つ戻す">↶ 戻る</button>
-        <button class="symbol-btn history-btn" tabindex="8" onclick="redoManuscript()" title="本文の入力を1つ進める">↷ 進む</button>
+        <button class="symbol-btn history-btn" tabindex="7" onclick="undoManuscript()" aria-label="本文の入力を1つ戻す" title="本文の入力を1つ戻す">↶<span class="history-btn-label"> 戻る</span></button>
+        <button class="symbol-btn history-btn" tabindex="8" onclick="redoManuscript()" aria-label="本文の入力を1つ進める" title="本文の入力を1つ進める">↷<span class="history-btn-label"> 進む</span></button>
       </div>
 
       <!-- 下段：目立つダークブラウンのメイン操作ボタン -->
@@ -1007,11 +988,13 @@ function showFontSettings() {
   $('fontSizeRange').value = size;
   $('fontSizeValue').textContent = size + 'px';
   $('fontSettingsOverlay').classList.remove('hidden');
+  openModalWithFocusTrap($('fontSettingsOverlay'));
 }
 
 function hideFontSettings() {
   applyManuscriptStyle();
   $('fontSettingsOverlay').classList.add('hidden');
+  closeModalRestoreFocus();
 }
 
 function previewFontSettings() {
@@ -1032,6 +1015,7 @@ function saveFontSettings() {
   saveData();
   applyManuscriptStyle();
   $('fontSettingsOverlay').classList.add('hidden');
+  closeModalRestoreFocus();
   toast('文字設定を保存しました');
 }
 
@@ -1119,6 +1103,7 @@ function showNewProjectModal() {
   $('newCheckOut').value = formatDatetimeLocal(tomorrow);
   $('newPlot').value = '';
   $('newProjectOverlay').classList.remove('hidden');
+  openModalWithFocusTrap($('newProjectOverlay'));
 }
 
 function showEditProjectModal(id, event) {
@@ -1137,11 +1122,13 @@ function showEditProjectModal(id, event) {
   $('newCheckOut').value = formatDatetimeLocal(p.checkOut);
   $('newPlot').value = p.plot || '';
   $('newProjectOverlay').classList.remove('hidden');
+  openModalWithFocusTrap($('newProjectOverlay'));
 }
 
 function hideNewProjectModal() {
   $('newProjectOverlay').classList.add('hidden');
   editingProjectId = null;
+  closeModalRestoreFocus();
 }
 
 function saveProjectModal() {
@@ -1244,7 +1231,8 @@ function renderProjectList() {
     const inStr = p.checkIn ? formatDisplayDate(p.checkIn) : '未設定';
     const outStr = p.checkOut ? formatDisplayDate(p.checkOut) : '未設定';
     const updatedStr = p.updatedAt ? formatUpdatedAt(p.updatedAt) : '未更新';
-    const progress = p.goal ? Math.min(100, Math.floor(count / p.goal * 100)) : 0;
+    const progressPercent = p.goal ? Math.floor(count / p.goal * 100) : 0;
+    const progressBarPercent = Math.min(100, progressPercent);
 
     item.innerHTML = `
       <div class="reorder-actions" onclick="event.stopPropagation()">
@@ -1264,10 +1252,10 @@ function renderProjectList() {
 
         <div class="project-progress-wrapper">
           <div class="project-progress-bar-bg">
-            <div class="project-progress-bar-fill" style="width: ${progress}%;"></div>
+            <div class="project-progress-bar-fill" style="width: ${progressBarPercent}%;"></div>
           </div>
           <div class="project-meta-text">
-            <span><b>${fmt(count)}</b> / ${fmt(p.goal)} 字 (${progress}%)</span>
+            <span><b>${fmt(count)}</b> / ${fmt(p.goal)} 字 (${progressPercent}%)</span>
             <span>最終更新 ${updatedStr}</span>
           </div>
         </div>
@@ -1407,6 +1395,52 @@ function saveNow() {
   toast('原稿を保存しました');
 }
 
+// キャレット（カーソル）の実際のピクセル位置を、隠しミラー要素で計測し、
+// 表示範囲外にある場合だけ必要最小限スクロールする。
+// 「常に最下部までスクロール」ではなく、実際のカーソル位置を考慮する。
+function scrollTextareaToCaret(el) {
+  const caretIndex = el.selectionStart;
+  const style = window.getComputedStyle(el);
+
+  const mirror = document.createElement('div');
+  const props = [
+    'boxSizing', 'width', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+    'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+    'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'wordSpacing',
+    'textTransform', 'textIndent', 'textAlign'
+  ];
+  props.forEach(p => { mirror.style[p] = style[p]; });
+  mirror.style.position = 'absolute';
+  mirror.style.visibility = 'hidden';
+  mirror.style.whiteSpace = 'pre-wrap';
+  mirror.style.wordWrap = 'break-word';
+  mirror.style.top = '0';
+  mirror.style.left = '-9999px';
+  mirror.style.height = 'auto';
+
+  mirror.appendChild(document.createTextNode(el.value.substring(0, caretIndex)));
+  const marker = document.createElement('span');
+  marker.textContent = '\u200b';
+  mirror.appendChild(marker);
+  mirror.appendChild(document.createTextNode(el.value.substring(caretIndex) || '.'));
+
+  document.body.appendChild(mirror);
+  const markerTop = marker.offsetTop;
+  const markerHeight = marker.offsetHeight || parseFloat(style.lineHeight) || 24;
+  document.body.removeChild(mirror);
+
+  const paddingTop = parseFloat(style.paddingTop) || 0;
+  const paddingBottom = parseFloat(style.paddingBottom) || 0;
+  const visibleTop = el.scrollTop;
+  const visibleBottom = el.scrollTop + el.clientHeight - paddingTop - paddingBottom;
+
+  if (markerTop < visibleTop) {
+    el.scrollTop = markerTop;
+  } else if (markerTop + markerHeight > visibleBottom) {
+    el.scrollTop = markerTop + markerHeight - el.clientHeight + paddingTop + paddingBottom;
+  }
+}
+
 function countText(t) {
   return t.split('\n').reduce((total, line) => {
     return total + [...line].length;
@@ -1420,7 +1454,7 @@ function update() {
   const g = Math.max(1, p.goal || 10000);
 
   $('count').textContent = fmt(n);
-  $('percent').textContent = Math.min(100, Math.floor(n / g * 100)) + '%';
+  $('percent').textContent = Math.floor(n / g * 100) + '%';
 }
 
 // テキストをUndo/Redo可能な形で挿入する共通ヘルパー。
@@ -1507,6 +1541,88 @@ function insertBracket(open, close) {
   saveData();
 }
 
+// --- Tabキー制御：通常画面の完全ループ ＋ モーダルのフォーカストラップ ---
+
+const MODAL_IDS = ['fontSettingsOverlay', 'plotOverlay', 'newProjectOverlay'];
+let modalPreviousFocus = null;
+
+function getOpenModalElement() {
+  for (const id of MODAL_IDS) {
+    const el = $(id);
+    if (el && !el.classList.contains('hidden')) return el;
+  }
+  return null;
+}
+
+function getFocusableIn(container) {
+  return Array.from(container.querySelectorAll('button, [href], input, select, textarea, [tabindex]'))
+    .filter(el => !el.disabled && el.tabIndex !== -1 && el.offsetParent !== null);
+}
+
+function getMainScreenTabOrder() {
+  const writeEl = $('write');
+  if (!writeEl) return [];
+  return Array.from(writeEl.querySelectorAll('[tabindex]'))
+    .filter(el => !el.disabled && el.offsetParent !== null)
+    .sort((a, b) => Number(a.getAttribute('tabindex')) - Number(b.getAttribute('tabindex')));
+}
+
+// モーダルを開く直前の要素を記憶し、閉じたときに戻すためのラッパー
+function openModalWithFocusTrap(modalEl, focusFirst = true) {
+  modalPreviousFocus = document.activeElement;
+  if (focusFirst) {
+    const focusables = getFocusableIn(modalEl);
+    if (focusables.length) focusables[0].focus();
+  }
+}
+function closeModalRestoreFocus() {
+  const toFocus = modalPreviousFocus;
+  modalPreviousFocus = null;
+  if (toFocus && typeof toFocus.focus === 'function' && toFocus.offsetParent !== null) {
+    toFocus.focus();
+  }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Tab') return;
+
+  const openModal = getOpenModalElement();
+
+  if (openModal) {
+    const focusables = getFocusableIn(openModal);
+    if (focusables.length === 0) return;
+    const idx = focusables.indexOf(document.activeElement);
+    e.preventDefault();
+    let nextIdx;
+    if (idx === -1) {
+      nextIdx = e.shiftKey ? focusables.length - 1 : 0;
+    } else if (e.shiftKey) {
+      nextIdx = (idx === 0) ? focusables.length - 1 : idx - 1;
+    } else {
+      nextIdx = (idx === focusables.length - 1) ? 0 : idx + 1;
+    }
+    focusables[nextIdx].focus();
+    return;
+  }
+
+  // モーダルが開いていない場合：執筆画面が表示中のときだけ完全ループさせる
+  if (!$('write') || $('write').classList.contains('hidden')) return;
+
+  const els = getMainScreenTabOrder();
+  if (els.length === 0) return;
+  const idx = els.indexOf(document.activeElement);
+  e.preventDefault();
+  let nextIdx;
+  if (idx === -1) {
+    nextIdx = e.shiftKey ? els.length - 1 : 0;
+  } else if (e.shiftKey) {
+    nextIdx = (idx === 0) ? els.length - 1 : idx - 1;
+  } else {
+    nextIdx = (idx === els.length - 1) ? 0 : idx + 1;
+  }
+  els[nextIdx].focus();
+});
+
 function toggleTitleExpand() {
   $('roomTitleDisplay').classList.toggle('expanded');
 }
@@ -1515,14 +1631,14 @@ function undoManuscript() {
   const el = $('manuscript');
   if (!el) return;
   el.focus();
-  document.execCommand('undo');
+  try { document.execCommand('undo'); } catch (e) {}
 }
 
 function redoManuscript() {
   const el = $('manuscript');
   if (!el) return;
   el.focus();
-  document.execCommand('redo');
+  try { document.execCommand('redo'); } catch (e) {}
 }
 
 function showPlot() {
@@ -1530,9 +1646,11 @@ function showPlot() {
     $('plotWork').value = db.projects[db.currentId].plot || '';
   }
   $('plotOverlay').classList.remove('hidden');
+  openModalWithFocusTrap($('plotOverlay'));
 }
 function hidePlot() {
   $('plotOverlay').classList.add('hidden');
+  closeModalRestoreFocus();
 }
 function savePlot() {
   if (db.currentId && db.projects[db.currentId]) {
@@ -1657,6 +1775,7 @@ $('manuscript').addEventListener('keydown', (e) => {
     insertTextPreservingUndo(e.target, '\n' + FULL_WIDTH_SPACE);
     update();
     saveData();
+    scrollTextareaToCaret(e.target);
   }
 });
 
@@ -1673,9 +1792,19 @@ $('manuscript').addEventListener('input', () => {
 // キーボード表示時、実際に見えている高さに合わせて画面全体の高さを縮める
 // （iOS Safariはキーボードが出てもレイアウト自体の高さが変わらないため、
 //  visualViewportを使って追従させる。下部の操作ボタンが隠れないようにする）
+//
+// ここで得られる高さの変化を流用して「キーボードが表示中かどうか」も判定する。
+// 新たな高さ監視処理は追加せず、既存のvisualViewport監視だけで完結させる。
+let maxViewportHeight = 0;
 function updateAppHeight() {
   const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
   document.documentElement.style.setProperty('--app-height', h + 'px');
+
+  if (h > maxViewportHeight) {
+    maxViewportHeight = h;
+  }
+  const shrink = maxViewportHeight - h;
+  document.body.classList.toggle('keyboard-open', shrink > 120);
 }
 updateAppHeight();
 if (window.visualViewport) {
@@ -1683,11 +1812,14 @@ if (window.visualViewport) {
   window.visualViewport.addEventListener('scroll', updateAppHeight);
 }
 window.addEventListener('resize', updateAppHeight);
-window.addEventListener('orientationchange', updateAppHeight);
+window.addEventListener('orientationchange', () => {
+  // 回転後は基準となる最大高さを取り直す
+  maxViewportHeight = 0;
+  setTimeout(updateAppHeight, 300);
+});
 
 loadData();
 renderProjectList();
-
 </script>
 </body>
 </html>
