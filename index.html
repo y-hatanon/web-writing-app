@@ -880,10 +880,13 @@ let editingProjectId = null;
 
 // 本文入力欄（manuscript）が記号ボタン等へのフォーカス移動でblurした場合に、
 // 直前のカーソル位置（selectionStart/End）を退避しておくための変数。
-// Tabキーで記号ボタンへ移動→クリックした際、textareaのカーソル位置が
-// 正しく復元されないまま記号が挿入される不具合を防ぐために使用する。
 let savedCaretStart = null;
 let savedCaretEnd = null;
+
+// Enter直後だけ本来あるべき新しいカーソル位置を保持する専用状態
+let pendingManuscriptCaretStart = null;
+let pendingManuscriptCaretEnd = null;
+
 let draggedId = null;
 let saveFailed = false;
 const STORAGE_WARN_THRESHOLD = 4.5 * 1024 * 1024; // 目安5MBに対する警告ライン
@@ -1408,9 +1411,6 @@ function saveNow() {
   toast('原稿を保存しました');
 }
 
-// キャレット（カーソル）の実際のピクセル位置を、隠しミラー要素で計測し、
-// 表示範囲外にある場合だけ必要最小限スクロールする。
-// 「常に最下部までスクロール」ではなく、実際のカーソル位置を考慮する。
 function scrollTextareaToCaret(el) {
   const caretIndex = el.selectionStart;
   const style = window.getComputedStyle(el);
@@ -1470,25 +1470,6 @@ function update() {
   $('percent').textContent = Math.floor(n / g * 100) + '%';
 }
 
-// テキストをUndo/Redo可能な形で挿入する共通ヘルパー。
-// document.execCommand('insertText', ...) はブラウザの標準Undo履歴に
-// そのまま積まれるため、Ctrl+Z / Cmd+Z が自然に効く。
-// 非対応環境向けに setRangeText へのフォールバックも用意する。
-//
-// 【重要】execCommand('insertText', ...) は、実行直後に
-// selectionStart/selectionEndを読み取っても、ブラウザ内部でまだ
-// 挿入前の古い位置のままになっている場合がある（特にEnterキー処理での
-// 改行＋全角スペース挿入など、そのtextarea上で最初に実行される
-// execCommandで発生しやすい）。
-// この古い値をそのままsavedCaretStart/Endへ保存してしまうと、
-// 直後に記号ボタンを押した際に「挿入前の位置」が復元されてしまい、
-// 記号が意図しない場所（前の行の末尾など）に入る原因になる。
-//
-// これを避けるため、execCommandの返り値やブラウザ内部の更新状況に
-// 依存せず、「挿入前の位置（start）＋挿入した文字列の長さ」から
-// 挿入後にあるべきカーソル位置を自前で計算し、setSelectionRangeで
-// 明示的に確定させる。これにより、以降の読み取り（pointerdown時の
-// 直接読み取りを含む）は常に正しい値を返すようになる。
 function insertTextPreservingUndo(el, text) {
   el.focus();
   const start = el.selectionStart;
@@ -1505,8 +1486,6 @@ function insertTextPreservingUndo(el, text) {
     saveData();
   }
 
-  // 挿入後にあるべき位置を自前で計算し、実際のselectionと食い違って
-  // いれば強制的に補正する（execCommandの内部更新の遅延・不整合対策）。
   const expectedPos = start + text.length;
   if (el.selectionStart !== expectedPos || el.selectionEnd !== expectedPos) {
     el.setSelectionRange(expectedPos, expectedPos);
@@ -1516,25 +1495,28 @@ function insertTextPreservingUndo(el, text) {
   savedCaretEnd = el.selectionEnd;
 }
 
-// manuscriptの現在のカーソル位置（selectionStart/End）を退避する。
-// blur時・カーソル移動時に呼び出し、常に最新の位置を保持しておく。
 function saveManuscriptCaret() {
   const el = $('manuscript');
   if (!el) return;
+  // Enter直後の pending キャレット状態が保持されている間は、
+  // SP側OS/ブラウザイベントで遅れて届く古い文字位置情報で上書きしない
+  if (pendingManuscriptCaretStart !== null && pendingManuscriptCaretEnd !== null) {
+    return;
+  }
   savedCaretStart = el.selectionStart;
   savedCaretEnd = el.selectionEnd;
 }
 
-// 記号ボタン等の操作直前に呼び出す。
-// 「現在フォーカスが本文入力欄にあるかどうか」で分岐すると、
-// フォーカス状態の判定タイミングによっては直前のカーソル位置を
-// 取りこぼすことがあったため、savedCaretStart/Endが記録されている場合は
-// フォーカス状態に関わらず常にそれをmanuscriptのselectionRangeへ同期する。
-// savedCaretStart/Endは、本文入力欄でのカーソル移動・入力・blur等の
-// タイミングで随時更新しているため、常に最新の正しい位置を指している。
 function ensureManuscriptSelection() {
   const el = $('manuscript');
   if (!el) return;
+
+  // Enter直後の pending キャレット状態が存在する場合は優先採用
+  if (pendingManuscriptCaretStart !== null && pendingManuscriptCaretEnd !== null) {
+    savedCaretStart = pendingManuscriptCaretStart;
+    savedCaretEnd = pendingManuscriptCaretEnd;
+  }
+
   if (savedCaretStart !== null && savedCaretEnd !== null) {
     const max = el.value.length;
     const start = Math.min(savedCaretStart, max);
@@ -1543,10 +1525,6 @@ function ensureManuscriptSelection() {
   }
 }
 
-// 行頭にカーソルがある場合のみ、行頭の全角スペースを削除する。
-// 仕様A：カーソルが行頭スペースの範囲内 → 削除する
-// 仕様B：カーソルが文章途中 → 何もしない
-// 仕様C：範囲選択がある場合 → 何もしない
 function stripLeadingSpacesAtCursor() {
   const el = $('manuscript');
   if (!el) return false;
@@ -1556,7 +1534,7 @@ function stripLeadingSpacesAtCursor() {
   const start = el.selectionStart;
   const end = el.selectionEnd;
 
-  if (start !== end) return false; // 仕様C
+  if (start !== end) return false;
 
   const lineStart = val.lastIndexOf('\n', start - 1) + 1;
 
@@ -1566,7 +1544,7 @@ function stripLeadingSpacesAtCursor() {
   }
   if (spacesCount === 0) return false;
 
-  if (start > lineStart + spacesCount) return false; // 仕様B
+  if (start > lineStart + spacesCount) return false;
 
   el.setSelectionRange(lineStart, lineStart + spacesCount);
   insertTextPreservingUndo(el, '');
@@ -1579,6 +1557,10 @@ function insertSymbol(symbol) {
 
   stripLeadingSpacesAtCursor();
   insertTextPreservingUndo(el, symbol);
+
+  // 挿入完了後に pending 状態を解除
+  pendingManuscriptCaretStart = null;
+  pendingManuscriptCaretEnd = null;
 
   update();
   saveData();
@@ -1602,6 +1584,10 @@ function insertBracket(open, close) {
   } else {
     el.setSelectionRange(start + open.length, start + open.length + selectedText.length);
   }
+
+  // 挿入完了後に pending 状態を解除
+  pendingManuscriptCaretStart = null;
+  pendingManuscriptCaretEnd = null;
 
   update();
   saveData();
@@ -1633,7 +1619,6 @@ function getMainScreenTabOrder() {
     .sort((a, b) => Number(a.getAttribute('tabindex')) - Number(b.getAttribute('tabindex')));
 }
 
-// モーダルを開く直前の要素を記憶し、閉じたときに戻すためのラッパー
 function openModalWithFocusTrap(modalEl, focusFirst = true) {
   modalPreviousFocus = document.activeElement;
   if (focusFirst) {
@@ -1671,7 +1656,6 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  // モーダルが開いていない場合：執筆画面が表示中のときだけ完全ループさせる
   if (!$('write') || $('write').classList.contains('hidden')) return;
 
   const els = getMainScreenTabOrder();
@@ -1682,7 +1666,7 @@ document.addEventListener('keydown', (e) => {
   if (idx === -1) {
     nextIdx = e.shiftKey ? els.length - 1 : 0;
   } else if (e.shiftKey) {
-    nextIdx = (idx === 0) ? els.length - 1 : idx - 1;
+    nextIdx = (idx === 0) ? focusables.length - 1 : idx - 1;
   } else {
     nextIdx = (idx === els.length - 1) ? 0 : idx + 1;
   }
@@ -1838,49 +1822,43 @@ function toast(t) {
 $('manuscript').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.isComposing) {
     e.preventDefault();
-    insertTextPreservingUndo(e.target, '\n' + FULL_WIDTH_SPACE);
+    const el = e.target;
+    const start = el.selectionStart;
+    const textToInsert = '\n' + FULL_WIDTH_SPACE;
+
+    insertTextPreservingUndo(el, textToInsert);
+
+    // Enter後に本来あるべき位置をpending状態として保持
+    const expectedPos = start + textToInsert.length;
+    pendingManuscriptCaretStart = expectedPos;
+    pendingManuscriptCaretEnd = expectedPos;
+
     update();
     saveData();
-    scrollTextareaToCaret(e.target);
-    // 改行直後のカーソル位置を確実に記録しておく（保険）。
-    // insertTextPreservingUndo内でも保存しているが、Enter処理の直後という
-    // タイミングで明示的に再保存することで、記号ボタン初回押下時に
-    // 古い位置が使われる事態を防ぐ。
-    saveManuscriptCaret();
+    scrollTextareaToCaret(el);
   }
 });
 
-// 本文入力欄でのカーソル移動・入力・フォーカス解除のたびに、
-// 現在のカーソル位置（selectionStart/End）を退避しておく。
-// blurのタイミングだけに頼ると、記号ボタン側でmousedownの既定動作を
-// 止めてblurが発生しなくなったケースなどで、直前の位置を
-// 取りこぼす場合があるため、複数のタイミングで冗長に保存する。
+// 手動で入力やカーソル移動が発生した場合は pending 状態を解除
+function clearPendingCaretOnUserAction() {
+  pendingManuscriptCaretStart = null;
+  pendingManuscriptCaretEnd = null;
+}
+
+$('manuscript').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') {
+    clearPendingCaretOnUserAction();
+  }
+});
+$('manuscript').addEventListener('mousedown', clearPendingCaretOnUserAction);
+$('manuscript').addEventListener('touchstart', clearPendingCaretOnUserAction);
+
 $('manuscript').addEventListener('keyup', saveManuscriptCaret);
 $('manuscript').addEventListener('click', saveManuscriptCaret);
 $('manuscript').addEventListener('mouseup', saveManuscriptCaret);
 $('manuscript').addEventListener('select', saveManuscriptCaret);
 $('manuscript').addEventListener('blur', saveManuscriptCaret);
 
-// 記号バーのボタン（――／「」／『』／（）／↶／↷）を押す「直前」の
-// 本文入力欄のカーソル位置（selectionStart/End）を確実に取得するため、
-// pointerdownの段階でsaveManuscriptCaret()を呼ぶ。
-//
-// pointerdownは、マウスのmousedownやタッチのtouchstartよりも先に発火する
-// （フォーカス移動の既定動作が実行されるより前の段階）ため、
-// ここで取得した値が「ボタンへフォーカスが移る前の、本当に直前の
-// カーソル位置」であることを保証できる。
-// これにより、以降ensureManuscriptSelection()で復元される位置は
-// 常に「今回の押下の直前」の値になり、過去に保存された古い値が
-// 誤って使われることはない。
-//
-// mousedownは、本文入力欄からフォーカスが外れるのを防ぐための
-// preventDefault専用として維持する（SPでキーボードが開閉して
-// レイアウトが崩れる不具合の対策のため）。カーソル位置の取得は
-// pointerdownの時点で完了しているため、mousedown側では位置の
-// 保存は行わない（保存は済んでいるため、preventDefaultのみでよい）。
-//
-// touchstartへは一切介入しない（preventDefaultするとタップ操作の
-// clickイベント発火自体が実機で阻害されることが確認されているため）。
 (function () {
   const bar = document.querySelector('.symbol-bar');
   if (!bar) return;
@@ -1909,20 +1887,9 @@ $('manuscript').addEventListener('input', () => {
   saveManuscriptCaret();
 });
 
-// キーボード表示時、実際に見えている高さに合わせて画面全体の高さを縮める
-// （iOS Safariはキーボードが出てもレイアウト自体の高さが変わらないため、
-//  visualViewportを使って追従させる。下部の操作ボタンが隠れないようにする）
-//
-// ここで得られる高さの変化を流用して「キーボードが表示中かどうか」も判定する。
-// 新たな高さ監視処理は追加せず、既存のvisualViewport監視だけで完結させる。
 let maxViewportHeight = 0;
-
-// resize/scrollイベントが短時間に連続発生した場合、最後の1回分だけを
-// requestAnimationFrameでまとめて処理する。
-// 記号ボタンをすばやく連打した際、フォーカス移動に伴う一時的な
-// visualViewportの変化（キーボードの開閉アニメーション由来の中間値）を
-// そのまま毎回反映してしまうと、レイアウトが不安定にちらつく原因になるため。
 let appHeightRaf = null;
+
 function updateAppHeight() {
   if (appHeightRaf !== null) return;
   appHeightRaf = requestAnimationFrame(() => {
@@ -1937,11 +1904,6 @@ function applyAppHeight() {
 
   const wasKeyboardOpen = document.body.classList.contains('keyboard-open');
 
-  // 基準となる高さ（キーボードを閉じているときの高さ）の更新は、
-  // 「現在キーボードが閉じている」と判定できているときだけ行う。
-  // キーボード表示中（記号ボタンへのフォーカス移動などによる一時的な
-  // 揺れを含む）に基準値が誤って更新されると、以後のshrink量の計算がずれ、
-  // keyboard-openの判定が連打のたびに反転してしまう不具合につながるため。
   if (!wasKeyboardOpen && h > maxViewportHeight) {
     maxViewportHeight = h;
   }
@@ -1950,10 +1912,6 @@ function applyAppHeight() {
   const isKeyboardOpen = shrink > 120;
   document.body.classList.toggle('keyboard-open', isKeyboardOpen);
 
-  // キーボード表示中は、フォーカス移動等をきっかけにブラウザ側が
-  // ページ全体をスクロールさせてしまうことがあるため、その分だけ
-  // 強制的に打ち消す。textarea自身のスクロール（#manuscriptのoverflow-y:auto）
-  // には影響しない。
   if (isKeyboardOpen && (window.scrollX !== 0 || window.scrollY !== 0)) {
     window.scrollTo(0, 0);
   }
@@ -1965,7 +1923,6 @@ if (window.visualViewport) {
 }
 window.addEventListener('resize', updateAppHeight);
 window.addEventListener('orientationchange', () => {
-  // 回転後は基準となる最大高さを取り直す
   maxViewportHeight = 0;
   setTimeout(updateAppHeight, 300);
 });
