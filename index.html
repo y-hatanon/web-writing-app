@@ -2,7 +2,6 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<!-- viewportのinteractive-widget設定を活用 -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
 
 <!-- PWA (ホーム画面追加) 対応 -->
@@ -34,14 +33,14 @@
   --radius-lg:12px;
   --radius-md:8px;
   --radius-sm:5px;
+  --app-height:100%;
 }
 *{box-sizing:border-box}
 html, body {
   margin: 0;
   padding: 0;
   width: 100%;
-  height: 100%;
-  height: 100dvh; /* Dynamic Viewport Heightでキーボード対応 */
+  height: var(--app-height);
   overflow: hidden;
   color: var(--ink);
   font-family: var(--font-gothic);
@@ -49,6 +48,11 @@ html, body {
 }
 button,input,textarea,select{font:inherit}
 button{cursor:pointer;border:none;outline:none;-webkit-tap-highlight-color:transparent}
+button:focus-visible{
+  outline:2px solid var(--accent);
+  outline-offset:2px;
+  border-radius:var(--radius-sm);
+}
 .hidden{display:none!important}
 
 /* --- ロビー / 作品一覧画面 --- */
@@ -421,8 +425,17 @@ textarea.title-textarea {
   font-size:16px;
   line-height:1.35;
   word-break:break-word;
-  white-space:pre-wrap;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  min-width:0;
   flex:1;
+  cursor:pointer;
+}
+.room-title-display.expanded{
+  white-space:pre-wrap;
+  overflow:visible;
+  text-overflow:clip;
 }
 
 .edit-checkout-btn{
@@ -480,9 +493,16 @@ textarea.title-textarea {
 /* 記号入力バー */
 .symbol-bar {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, 1fr) 0.62fr 0.62fr;
   gap: 8px;
   width: 100%;
+}
+
+.history-btn{
+  font-size:11px;
+  letter-spacing:0;
+  padding-left:2px;
+  padding-right:2px;
 }
 
 .symbol-btn{
@@ -496,7 +516,6 @@ textarea.title-textarea {
   letter-spacing: 0.05em;
   text-align: center;
   transition: all .15s;
-  touch-action: manipulation;
 }
 .symbol-btn:hover{
   background: var(--line-light);
@@ -533,7 +552,6 @@ textarea.title-textarea {
   align-items:center;
   justify-content:center;
   box-shadow:0 2px 5px rgba(0,0,0,0.15);
-  touch-action: manipulation;
 }
 .action-btn:hover{
   background:var(--primary-btn-hover);
@@ -550,7 +568,7 @@ textarea.title-textarea {
   color:var(--muted);
   display:flex;
   align-items:center;
-  justify-content:space-between;
+  justify-content:flex-end;
   gap:8px 12px;
   padding:2px;
   font-variant-numeric:tabular-nums;
@@ -638,34 +656,24 @@ textarea.title-textarea {
 
   input, textarea, select { font-size: 16px !important; }
 
-  /* 執筆画面（キーボード展開時の空間領域を最大化する調整） */
-  .editor-container{ padding: 6px 8px; }
+  /* 執筆画面ヘッダー修正（右寄せ統一） */
+  .editor-header{ padding:10px 12px; gap:4px; margin-bottom:8px; }
+  .stats-info{ width:100%; justify-content:flex-end; font-size:11px; gap:8px 10px; }
+
+  /* 執筆エリア */
+  .editor-container{ padding:8px 10px; }
+  #manuscript{ padding:14px; font-size:16px; line-height:1.9; }
   
-  .editor-header{ padding: 6px 10px; gap: 2px; margin-bottom: 4px; }
-  .editor-header-bottom{ padding-top: 0; }
-  .room-title-display{ font-size: 14px; }
-  .stats-info{ font-size: 10.5px; gap: 6px 8px; }
+  /* 操作ボタン */
+  .action-group{ display:grid; grid-template-columns:repeat(2, 1fr); gap:6px; }
+  .action-btn{ padding:8px 0; font-size:12px; }
+  .symbol-bar{ gap:6px; }
+  .symbol-btn{ padding:5px 0; font-size:12px; }
 
-  #manuscript{ padding: 10px 12px; font-size: 16px; line-height: 1.7; }
-
-  .editor-footer{ margin-top: 4px; gap: 4px; }
-  .action-group{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
-  .action-btn{ padding: 6px 0; font-size: 11px; }
-  .symbol-bar{ gap: 4px; }
-  .symbol-btn{ padding: 4px 0; font-size: 12px; }
-
-  .footer-meta{ font-size: 10px; gap: 4px; }
-  .footer-meta-group { gap: 6px; }
-  .footer-meta-btns { margin-left: auto; }
-}
-
-/* キーボード表示時（画面の高さが低くなった時）のコンパクト表示制御 */
-@media(max-height: 500px){
-  .editor-header-top { display: none; }
-  .footer-meta-group { display: none; }
-  .editor-header { padding: 4px 8px; margin-bottom: 4px; }
-  .editor-footer { margin-top: 4px; gap: 4px; }
-  #manuscript { padding: 8px; }
+  /* 最下部メタ情報最適化 */
+  .footer-meta{ justify-content:space-between; gap:6px; font-size:10.5px; }
+  .footer-meta-group { gap:8px; }
+  .footer-meta-btns { margin-left:auto; }
 }
 </style>
 </head>
@@ -713,13 +721,14 @@ textarea.title-textarea {
       </div>
       <!-- 下段：横長タイトル表示 ＋ 編集ボタン -->
       <div class="editor-header-bottom">
-        <div id="roomTitleDisplay" class="room-title-display">無題</div>
-        <button class="edit-checkout-btn" onclick="showEditProjectModal(db.currentId)">⚙️ 編集</button>
+        <div id="roomTitleDisplay" class="room-title-display" onclick="toggleTitleExpand()" title="タップで全文表示">無題</div>
+        <button class="edit-checkout-btn" tabindex="1" onclick="showEditProjectModal(db.currentId)">⚙️ 編集</button>
       </div>
     </div>
 
     <div class="editor-main">
       <textarea id="manuscript" 
+                tabindex="2"
                 placeholder="ここに本文を執筆してください……"
                 autocomplete="off" 
                 autocorrect="off" 
@@ -730,19 +739,21 @@ textarea.title-textarea {
     <div class="editor-footer">
       <!-- 上段：ライトな記号入力ボタン -->
       <div class="symbol-bar">
-        <button type="button" class="symbol-btn" onmousedown="event.preventDefault(); insertSymbol('――')">――</button>
-        <button type="button" class="symbol-btn" onmousedown="event.preventDefault(); insertBracket('「', '」')">「」</button>
-        <button type="button" class="symbol-btn" onmousedown="event.preventDefault(); insertBracket('『', '』')">『』</button>
-        <button type="button" class="symbol-btn" onmousedown="event.preventDefault(); insertBracket('（', '）')">（）</button>
+        <button class="symbol-btn" tabindex="3" onclick="insertSymbol('――')">――</button>
+        <button class="symbol-btn" tabindex="4" onclick="insertBracket('「', '」')">「」</button>
+        <button class="symbol-btn" tabindex="5" onclick="insertBracket('『', '』')">『』</button>
+        <button class="symbol-btn" tabindex="6" onclick="insertBracket('（', '）')">（）</button>
+        <button class="symbol-btn history-btn" tabindex="7" onclick="undoManuscript()" title="本文の入力を1つ戻す">↶ 戻る</button>
+        <button class="symbol-btn history-btn" tabindex="8" onclick="redoManuscript()" title="本文の入力を1つ進める">↷ 進む</button>
       </div>
 
       <!-- 下段：目立つダークブラウンのメイン操作ボタン -->
       <div class="action-bar">
         <div class="action-group">
-          <button type="button" class="action-btn" onclick="saveNow()">local保存</button>
-          <button type="button" class="action-btn" onclick="exportTxt()">txt書き出し</button>
-          <button type="button" class="action-btn" onclick="showPlot()">プロット</button>
-          <button type="button" class="action-btn" onclick="showProjectList()">作品一覧</button>
+          <button class="action-btn" tabindex="9" onclick="saveNow()">local保存</button>
+          <button class="action-btn" tabindex="10" onclick="exportTxt()">txt書き出し</button>
+          <button class="action-btn" tabindex="11" onclick="showPlot()">プロット</button>
+          <button class="action-btn" tabindex="12" onclick="showProjectList()">作品一覧</button>
         </div>
       </div>
 
@@ -755,8 +766,8 @@ textarea.title-textarea {
           <span id="storageWarningWrite" class="hidden storage-warning-inline"></span>
         </div>
         <div class="footer-meta-btns">
-          <button class="secondary" style="padding:2px 8px;font-size:11px;" onclick="showFontSettings()">Aa 文字設定</button>
-          <button class="secondary backup-btn" style="padding:2px 8px;font-size:11px;" onclick="exportBackupData()">JSONバックアップ</button>
+          <button class="secondary" tabindex="13" style="padding:2px 8px;font-size:11px;" onclick="showFontSettings()">Aa 文字設定</button>
+          <button class="secondary backup-btn" tabindex="14" style="padding:2px 8px;font-size:11px;" onclick="exportBackupData()">JSONバックアップ</button>
         </div>
       </div>
     </div>
@@ -1265,6 +1276,7 @@ function openProject(id) {
   if (p.text === FULL_WIDTH_SPACE) p.text = '';
 
   $('roomTitleDisplay').textContent = p.title || '無題';
+  $('roomTitleDisplay').classList.remove('expanded');
   $('goalView').textContent = fmt(p.goal || 10000);
   if ($('currentProjectId')) $('currentProjectId').textContent = 'ID: ' + (p.id ? p.id.replace(/^id/, '') : '----');
   $('manuscript').value = p.text || '';
@@ -1387,29 +1399,54 @@ function update() {
   $('percent').textContent = Math.min(100, Math.floor(n / g * 100)) + '%';
 }
 
+// テキストをUndo/Redo可能な形で挿入する共通ヘルパー。
+// document.execCommand('insertText', ...) はブラウザの標準Undo履歴に
+// そのまま積まれるため、Ctrl+Z / Cmd+Z が自然に効く。
+// 非対応環境向けに setRangeText へのフォールバックも用意する。
+function insertTextPreservingUndo(el, text) {
+  el.focus();
+  let ok = false;
+  try {
+    ok = document.execCommand('insertText', false, text);
+  } catch (e) {
+    ok = false;
+  }
+  if (!ok) {
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    el.setRangeText(text, start, end, 'end');
+    update();
+    saveData();
+  }
+}
+
+// 行頭にカーソルがある場合のみ、行頭の全角スペースを削除する。
+// 仕様A：カーソルが行頭スペースの範囲内 → 削除する
+// 仕様B：カーソルが文章途中 → 何もしない
+// 仕様C：範囲選択がある場合 → 何もしない
 function stripLeadingSpacesAtCursor() {
   const el = $('manuscript');
-  if (!el) return;
+  if (!el) return false;
 
   const val = el.value;
-  let start = el.selectionStart;
-  let end = el.selectionEnd;
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+
+  if (start !== end) return false; // 仕様C
 
   const lineStart = val.lastIndexOf('\n', start - 1) + 1;
-  
+
   let spacesCount = 0;
   while (val[lineStart + spacesCount] === FULL_WIDTH_SPACE) {
     spacesCount++;
   }
+  if (spacesCount === 0) return false;
 
-  if (spacesCount > 0) {
-    const newVal = val.slice(0, lineStart) + val.slice(lineStart + spacesCount);
-    el.value = newVal;
+  if (start > lineStart + spacesCount) return false; // 仕様B
 
-    start = Math.max(lineStart, start - spacesCount);
-    end = Math.max(lineStart, end - spacesCount);
-    el.setSelectionRange(start, end);
-  }
+  el.setSelectionRange(lineStart, lineStart + spacesCount);
+  insertTextPreservingUndo(el, '');
+  return true;
 }
 
 function insertSymbol(symbol) {
@@ -1417,17 +1454,10 @@ function insertSymbol(symbol) {
   if (!el) return;
 
   stripLeadingSpacesAtCursor();
-
-  const start = el.selectionStart;
-  const end = el.selectionEnd;
-
-  el.setRangeText(symbol, start, end, 'end');
-  const newPos = start + symbol.length;
-  el.setSelectionRange(newPos, newPos);
+  insertTextPreservingUndo(el, symbol);
 
   update();
   saveData();
-  el.focus();
 }
 
 function insertBracket(open, close) {
@@ -1438,12 +1468,9 @@ function insertBracket(open, close) {
 
   const start = el.selectionStart;
   const end = el.selectionEnd;
-  const val = el.value;
+  const selectedText = el.value.substring(start, end);
 
-  const selectedText = val.substring(start, end);
-  const insertText = open + selectedText + close;
-
-  el.setRangeText(insertText, start, end, 'end');
+  insertTextPreservingUndo(el, open + selectedText + close);
 
   if (start === end) {
     const newPos = start + open.length;
@@ -1454,7 +1481,24 @@ function insertBracket(open, close) {
 
   update();
   saveData();
+}
+
+function toggleTitleExpand() {
+  $('roomTitleDisplay').classList.toggle('expanded');
+}
+
+function undoManuscript() {
+  const el = $('manuscript');
+  if (!el) return;
   el.focus();
+  document.execCommand('undo');
+}
+
+function redoManuscript() {
+  const el = $('manuscript');
+  if (!el) return;
+  el.focus();
+  document.execCommand('redo');
 }
 
 function showPlot() {
@@ -1586,13 +1630,7 @@ function toast(t) {
 $('manuscript').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.isComposing) {
     e.preventDefault();
-    const el = e.target;
-    const start = el.selectionStart;
-    const end = el.selectionEnd;
-
-    const insertText = '\n' + FULL_WIDTH_SPACE;
-    el.setRangeText(insertText, start, end, 'end');
-    
+    insertTextPreservingUndo(e.target, '\n' + FULL_WIDTH_SPACE);
     update();
     saveData();
   }
@@ -1607,6 +1645,21 @@ $('manuscript').addEventListener('input', () => {
   update(); 
   saveData(); 
 });
+
+// キーボード表示時、実際に見えている高さに合わせて画面全体の高さを縮める
+// （iOS Safariはキーボードが出てもレイアウト自体の高さが変わらないため、
+//  visualViewportを使って追従させる。下部の操作ボタンが隠れないようにする）
+function updateAppHeight() {
+  const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  document.documentElement.style.setProperty('--app-height', h + 'px');
+}
+updateAppHeight();
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', updateAppHeight);
+  window.visualViewport.addEventListener('scroll', updateAppHeight);
+}
+window.addEventListener('resize', updateAppHeight);
+window.addEventListener('orientationchange', updateAppHeight);
 
 loadData();
 renderProjectList();
