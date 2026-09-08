@@ -10,6 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="ゆけむり">
 
 <title>Web旅館 ゆけむり</title>
+<!-- Revised: SP Enter-to-symbol caret synchronization fix -->
 <style>
 :root{
   --bg-dark:#1a1817;
@@ -1474,25 +1475,8 @@ function update() {
 // document.execCommand('insertText', ...) はブラウザの標準Undo履歴に
 // そのまま積まれるため、Ctrl+Z / Cmd+Z が自然に効く。
 // 非対応環境向けに setRangeText へのフォールバックも用意する。
-//
-// 【重要】execCommand('insertText', ...) は、実行直後に
-// selectionStart/selectionEndを読み取っても、ブラウザ内部でまだ
-// 挿入前の古い位置のままになっている場合がある（特にEnterキー処理での
-// 改行＋全角スペース挿入など、そのtextarea上で最初に実行される
-// execCommandで発生しやすい）。
-// この古い値をそのままsavedCaretStart/Endへ保存してしまうと、
-// 直後に記号ボタンを押した際に「挿入前の位置」が復元されてしまい、
-// 記号が意図しない場所（前の行の末尾など）に入る原因になる。
-//
-// これを避けるため、execCommandの返り値やブラウザ内部の更新状況に
-// 依存せず、「挿入前の位置（start）＋挿入した文字列の長さ」から
-// 挿入後にあるべきカーソル位置を自前で計算し、setSelectionRangeで
-// 明示的に確定させる。これにより、以降の読み取り（pointerdown時の
-// 直接読み取りを含む）は常に正しい値を返すようになる。
 function insertTextPreservingUndo(el, text) {
   el.focus();
-  const start = el.selectionStart;
-  const end = el.selectionEnd;
   let ok = false;
   try {
     ok = document.execCommand('insertText', false, text);
@@ -1500,18 +1484,12 @@ function insertTextPreservingUndo(el, text) {
     ok = false;
   }
   if (!ok) {
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
     el.setRangeText(text, start, end, 'end');
     update();
     saveData();
   }
-
-  // 挿入後にあるべき位置を自前で計算し、実際のselectionと食い違って
-  // いれば強制的に補正する（execCommandの内部更新の遅延・不整合対策）。
-  const expectedPos = start + text.length;
-  if (el.selectionStart !== expectedPos || el.selectionEnd !== expectedPos) {
-    el.setSelectionRange(expectedPos, expectedPos);
-  }
-
   savedCaretStart = el.selectionStart;
   savedCaretEnd = el.selectionEnd;
 }
@@ -1887,7 +1865,17 @@ $('manuscript').addEventListener('blur', saveManuscriptCaret);
 
   bar.addEventListener('pointerdown', (e) => {
     if (e.target.closest('.symbol-btn')) {
-      saveManuscriptCaret();
+      // SPではEnter直後、mobile browser/IME側のselectionが
+      // JavaScriptで確定したcaret位置へ同期する前にpointerdownが
+      // 発生する場合がある。その場合に現在のselectionを読み取ると、
+      // Enter直後に保存した正しいsavedCaretを古い位置で上書きしてしまう。
+      //
+      // 本文textareaが実際にフォーカス中なら現在位置を保存する。
+      // それ以外では、Enter直後などに既に保存したcaret位置を保持する。
+      const manuscript = $('manuscript');
+      if (manuscript && document.activeElement === manuscript) {
+        saveManuscriptCaret();
+      }
     }
   });
 
