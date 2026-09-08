@@ -1720,24 +1720,47 @@ renderProjectList();
 
 const manuscript = document.getElementById('manuscript');
 
-manuscript.addEventListener('input', () => {
-  // キャレット（カーソル）の位置まで自動スクロール
+// カーソル（キャレット）の位置まで視界を自動で追従させる処理
+function scrollToCursor() {
   requestAnimationFrame(() => {
-    // 選択位置（カーソル位置）を取得
+    // 現在のカーソル位置（文字数 index）を取得
     const selectionEnd = manuscript.selectionEnd;
     
-    // 一時的にダミーの要素を作ってカーソルのY座標を取得するか、
-    // 簡易的に scrollHeight に合わせてスクロール位置を追従させる
-    manuscript.scrollTop = manuscript.scrollHeight;
+    // テキストを行ごとに分割し、カーソルが何行目にあるか計算
+    const textBeforeCursor = manuscript.value.substring(0, selectionEnd);
+    const lineCount = textBeforeCursor.split('\n').length;
     
-    // 親要素がスクロールコンテナになっている（スマホ時）場合のケア
+    // 1行あたりの高さ（line-height 1.9 × font-size 16px ≒ 約30px）
+    const lineHeight = 30;
+    const cursorY = lineCount * lineHeight;
+    
+    // manuscript 内のスクロール位置をカーソル行に合わせて微調整
+    const visibleTop = manuscript.scrollTop;
+    const visibleBottom = visibleTop + manuscript.clientHeight;
+    
+    if (cursorY > visibleBottom - 40) {
+      manuscript.scrollTop = cursorY - manuscript.clientHeight + 60;
+    } else if (cursorY < visibleTop + 40) {
+      manuscript.scrollTop = Math.max(0, cursorY - 40);
+    }
+
+    // スマホ表示（親コンテナがスクロールする場合）の追従処理
     const container = document.querySelector('.editor-container');
     if (container && window.innerWidth <= 600) {
-      // 入力位置が見えるように親コンテナも下部へ寄せる
-      container.scrollTop = container.scrollHeight;
+      const containerBottom = container.scrollTop + container.clientHeight;
+      const manuscriptRect = manuscript.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      
+      // カーソル周辺の位置が親コンテナの下に隠れそうになったら押し下げる
+      if (manuscriptRect.bottom > containerRect.bottom) {
+        container.scrollTop += (manuscriptRect.bottom - containerRect.bottom + 20);
+      }
     }
   });
-});
+}
+
+// 入力時およびエンター（改行）時にカーソル位置へ追従
+manuscript.addEventListener('input', scrollToCursor);
 </script>
 </body>
 </html>
