@@ -660,8 +660,10 @@ textarea.title-textarea {
   .editor-header{ padding:10px 12px; gap:4px; margin-bottom:8px; }
   .stats-info{ width:100%; justify-content:flex-end; font-size:11px; gap:8px 10px; }
 
-  /* キーボード表示中：タイトル行を隠して本文入力欄を広げる（記号ボタン列は維持） */
-  body.keyboard-open .editor-header-bottom{ display:none; }
+  /* キーボード表示中：本文入力欄＋symbol-barだけを残し、それ以外は非表示にする */
+  body.keyboard-open .editor-header{ display:none; }
+  body.keyboard-open .action-bar{ display:none; }
+  body.keyboard-open .footer-meta{ display:none; }
 
   /* 執筆エリア */
   .editor-container{ padding:8px 10px; }
