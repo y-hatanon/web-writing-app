@@ -675,6 +675,60 @@ textarea.title-textarea {
   .footer-meta-group { gap:8px; }
   .footer-meta-btns { margin-left:auto; }
 }
+/* --- スマホ表示のみ適用 (max-width: 600px) --- */
+@media (max-width: 600px) {
+  /* スマホ時のみ全体を縦スクロール可能にして下部ボタンをキーボード下に逃がす */
+  .editor-container {
+    padding: 8px 10px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* ① 本文入力(textarea)にフォーカス時、ヘッダーを畳んで隠す */
+  .editor-header {
+    transition: max-height 0.25s ease, opacity 0.2s ease, padding 0.25s ease, margin 0.25s ease;
+    max-height: 200px;
+    opacity: 1;
+    overflow: hidden;
+  }
+
+  .editor-container:has(#manuscript:focus) .editor-header {
+    max-height: 0;
+    opacity: 0;
+    margin-bottom: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border: none;
+  }
+
+  /* 入力欄の表示領域を画面いっぱいに拡大 */
+  .editor-main {
+    flex: 1 0 auto;
+    min-height: calc(100vh - 110px);
+  }
+
+  #manuscript {
+    padding: 14px;
+    font-size: 16px !important; /* iOSの自動ズーム防止 */
+    line-height: 1.9;
+  }
+
+  /* ② 記号バーのみ画面下部（キーボード直上）に固定表示 */
+  .symbol-bar {
+    position: sticky;
+    bottom: 0;
+    background: var(--bg-editor);
+    padding: 6px 0;
+    z-index: 10;
+    gap: 6px;
+  }
+
+  /* 保存ボタン群などは記号バーの下に入り、初期状態では下に隠れる */
+  .action-bar,
+  .footer-meta {
+    margin-top: 6px;
+  }
+}
 </style>
 </head>
 <body>
@@ -1663,6 +1717,27 @@ window.addEventListener('orientationchange', updateAppHeight);
 
 loadData();
 renderProjectList();
+
+const manuscript = document.getElementById('manuscript');
+
+manuscript.addEventListener('input', () => {
+  // キャレット（カーソル）の位置まで自動スクロール
+  requestAnimationFrame(() => {
+    // 選択位置（カーソル位置）を取得
+    const selectionEnd = manuscript.selectionEnd;
+    
+    // 一時的にダミーの要素を作ってカーソルのY座標を取得するか、
+    // 簡易的に scrollHeight に合わせてスクロール位置を追従させる
+    manuscript.scrollTop = manuscript.scrollHeight;
+    
+    // 親要素がスクロールコンテナになっている（スマホ時）場合のケア
+    const container = document.querySelector('.editor-container');
+    if (container && window.innerWidth <= 600) {
+      // 入力位置が見えるように親コンテナも下部へ寄せる
+      container.scrollTop = container.scrollHeight;
+    }
+  });
+});
 </script>
 </body>
 </html>
