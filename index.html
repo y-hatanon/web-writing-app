@@ -878,18 +878,15 @@ let timerId, autoId;
 let isPasting = false;
 let editingProjectId = null;
 
-// 本文入力欄（manuscript）が記号ボタン等へのフォーカス移動でblurした場合に、
-// 直前のカーソル位置（selectionStart/End）を退避しておくための変数。
 let savedCaretStart = null;
 let savedCaretEnd = null;
-
-// Enter直後だけ本来あるべき新しいカーソル位置を保持する専用状態
-let pendingManuscriptCaretStart = null;
-let pendingManuscriptCaretEnd = null;
-
 let draggedId = null;
 let saveFailed = false;
 const STORAGE_WARN_THRESHOLD = 4.5 * 1024 * 1024; // 目安5MBに対する警告ライン
+
+// スマートフォン（タッチ環境）の分岐フラグ
+const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+let spPendingEnter = false;
 
 function $(id) { return document.getElementById(id); }
 function fmt(n) { return n.toLocaleString('ja-JP'); }
@@ -1498,11 +1495,6 @@ function insertTextPreservingUndo(el, text) {
 function saveManuscriptCaret() {
   const el = $('manuscript');
   if (!el) return;
-  // Enter直後の pending キャレット状態が保持されている間は、
-  // SP側OS/ブラウザイベントで遅れて届く古い文字位置情報で上書きしない
-  if (pendingManuscriptCaretStart !== null && pendingManuscriptCaretEnd !== null) {
-    return;
-  }
   savedCaretStart = el.selectionStart;
   savedCaretEnd = el.selectionEnd;
 }
@@ -1510,13 +1502,6 @@ function saveManuscriptCaret() {
 function ensureManuscriptSelection() {
   const el = $('manuscript');
   if (!el) return;
-
-  // Enter直後の pending キャレット状態が存在する場合は優先採用
-  if (pendingManuscriptCaretStart !== null && pendingManuscriptCaretEnd !== null) {
-    savedCaretStart = pendingManuscriptCaretStart;
-    savedCaretEnd = pendingManuscriptCaretEnd;
-  }
-
   if (savedCaretStart !== null && savedCaretEnd !== null) {
     const max = el.value.length;
     const start = Math.min(savedCaretStart, max);
@@ -1558,10 +1543,6 @@ function insertSymbol(symbol) {
   stripLeadingSpacesAtCursor();
   insertTextPreservingUndo(el, symbol);
 
-  // 挿入完了後に pending 状態を解除
-  pendingManuscriptCaretStart = null;
-  pendingManuscriptCaretEnd = null;
-
   update();
   saveData();
 }
@@ -1585,15 +1566,9 @@ function insertBracket(open, close) {
     el.setSelectionRange(start + open.length, start + open.length + selectedText.length);
   }
 
-  // 挿入完了後に pending 状態を解除
-  pendingManuscriptCaretStart = null;
-  pendingManuscriptCaretEnd = null;
-
   update();
   saveData();
 }
-
-// --- Tabキー制御：通常画面の完全ループ ＋ モーダルのフォーカストラップ ---
 
 const MODAL_IDS = ['fontSettingsOverlay', 'plotOverlay', 'newProjectOverlay'];
 let modalPreviousFocus = null;
@@ -1666,7 +1641,7 @@ document.addEventListener('keydown', (e) => {
   if (idx === -1) {
     nextIdx = e.shiftKey ? els.length - 1 : 0;
   } else if (e.shiftKey) {
-    nextIdx = (idx === 0) ? focusables.length - 1 : idx - 1;
+    nextIdx = (idx === 0) ? els.length - 1 : idx - 1;
   } else {
     nextIdx = (idx === els.length - 1) ? 0 : idx + 1;
   }
@@ -1819,39 +1794,29 @@ function toast(t) {
   setTimeout(() => e.classList.remove('show'), 1800);
 }
 
+// SPにおけるネイティブ改行後の全角スペース補填フラグの検出
+$('manuscript').addEventListener('beforeinput', (e) => {
+  if (isTouchDevice && e.inputType === 'insertLineBreak' && !e.isComposing) {
+    spPendingEnter = true;
+  }
+});
+
 $('manuscript').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.isComposing) {
-    e.preventDefault();
-    const el = e.target;
-    const start = el.selectionStart;
-    const textToInsert = '\n' + FULL_WIDTH_SPACE;
-
-    insertTextPreservingUndo(el, textToInsert);
-
-    // Enter後に本来あるべき位置をpending状態として保持
-    const expectedPos = start + textToInsert.length;
-    pendingManuscriptCaretStart = expectedPos;
-    pendingManuscriptCaretEnd = expectedPos;
-
-    update();
-    saveData();
-    scrollTextareaToCaret(el);
+    if (isTouchDevice) {
+      // SPの場合はネイティブEnter処理を許可するため e.preventDefault() を行わない
+      spPendingEnter = true;
+    } else {
+      // PCは従来通りの動作を保持
+      e.preventDefault();
+      insertTextPreservingUndo(e.target, '\n' + FULL_WIDTH_SPACE);
+      update();
+      saveData();
+      scrollTextareaToCaret(e.target);
+      saveManuscriptCaret();
+    }
   }
 });
-
-// 手動で入力やカーソル移動が発生した場合は pending 状態を解除
-function clearPendingCaretOnUserAction() {
-  pendingManuscriptCaretStart = null;
-  pendingManuscriptCaretEnd = null;
-}
-
-$('manuscript').addEventListener('keydown', (e) => {
-  if (e.key !== 'Enter') {
-    clearPendingCaretOnUserAction();
-  }
-});
-$('manuscript').addEventListener('mousedown', clearPendingCaretOnUserAction);
-$('manuscript').addEventListener('touchstart', clearPendingCaretOnUserAction);
 
 $('manuscript').addEventListener('keyup', saveManuscriptCaret);
 $('manuscript').addEventListener('click', saveManuscriptCaret);
@@ -1881,7 +1846,13 @@ $('manuscript').addEventListener('paste', () => {
   setTimeout(() => { isPasting = false; }, 100);
 });
 
-$('manuscript').addEventListener('input', () => { 
+$('manuscript').addEventListener('input', (e) => { 
+  if (isTouchDevice && spPendingEnter) {
+    spPendingEnter = false;
+    // ネイティブ改行が入った直後の位置へ全角スペースのみを挿入
+    insertTextPreservingUndo(e.target, FULL_WIDTH_SPACE);
+    scrollTextareaToCaret(e.target);
+  }
   update(); 
   saveData(); 
   saveManuscriptCaret();
