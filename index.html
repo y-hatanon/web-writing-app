@@ -605,8 +605,11 @@ textarea.title-textarea {
 .modal-head h2{font-size:16px;margin:0;color:var(--ink);font-weight:600}
 .close-btn{border:0;background:none;font-size:20px;color:var(--muted);cursor:pointer;padding:0 4px}
 .plot-textarea{width:100%;flex:1;min-height:200px;border:1px solid var(--line);border-radius:6px;padding:12px;line-height:1.7;font-size:13.5px;resize:vertical;margin-bottom:16px}
-/* プロット／メモPOPUP用の記号バー。PCでは表示しない（スマホのみ、下のメディアクエリで表示）。 */
-.plot-symbol-bar{ display:none; }
+
+/* プロット用記号バー */
+.plot-symbol-bar {
+  margin-top: 8px;
+}
 
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#2c2c2c;color:#fff;padding:8px 20px;border-radius:20px;font-size:12.5px;box-shadow:0 4px 15px rgba(0,0,0,0.2);opacity:0;pointer-events:none;transition:.25s;z-index:200}
 
@@ -689,29 +692,30 @@ textarea.title-textarea {
   .footer-meta-group { gap:8px; }
   .footer-meta-btns { margin-left:auto; }
 
-  /* プロット／メモPOPUP：本文入力欄と同じく、キーボード表示中のみ
-     記号バーを表示する。ボタン自体の見た目は.symbol-btn等の
-     既存クラスをそのまま再利用しているため、ここでは配置のみ定義する。 */
-  .plot-symbol-bar{ display:none; grid-template-columns: repeat(5, 1fr) 0.55fr 0.55fr; gap:4px; margin-bottom:12px; }
-  body.keyboard-open .plot-symbol-bar{ display:grid; }
-
-  /* プロット／メモPOPUP：キーボード表示中はPOPUPを画面上側へ寄せ、
-     本文入力欄と同じ --app-height（visualViewportに連動する
-     CSS変数。JS側は既存のupdateAppHeight/applyAppHeightをそのまま
-     利用し、今回新規のJS判定は追加していない）を使って、
-     キーボードに隠れない高さまでtextareaを広げる。 */
-  body.keyboard-open #plotOverlay.modal-overlay{
-    align-items:flex-start;
-    padding:8px;
+  /* プロット編集画面のスマホキーボード表示時UI調整 */
+  body.keyboard-open #plotOverlay {
+    padding: 0;
   }
-  body.keyboard-open #plotOverlay .modal-box{
-    width:100%;
-    max-height:calc(var(--app-height) - 16px);
-    margin-top:0;
+  body.keyboard-open #plotOverlay .modal-box {
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0;
+    padding: 8px 10px;
+    background: var(--bg-editor);
   }
-  body.keyboard-open #plotOverlay .plot-textarea{
-    flex:1;
-    min-height:0;
+  body.keyboard-open #plotOverlay .modal-head {
+    display: none !important;
+  }
+  body.keyboard-open #plotOverlay .modal-footer-btns {
+    display: none !important;
+  }
+  body.keyboard-open #plotOverlay .plot-textarea {
+    margin-bottom: 0;
+    font-size: 16px;
+    padding: 14px;
+    border-radius: var(--radius-md);
+    background: var(--bg-paper);
   }
 }
 </style>
@@ -776,7 +780,7 @@ textarea.title-textarea {
     </div>
 
     <div class="editor-footer">
-      <!-- 上段：ライトな記号入力ボタン -->
+      <!-- 上段：ライトな記号入力バー -->
       <div class="symbol-bar">
         <button class="symbol-btn" tabindex="3" onclick="insertSymbol('――')">――</button>
         <button class="symbol-btn" tabindex="4" onclick="insertSymbol('……')">……</button>
@@ -846,8 +850,10 @@ textarea.title-textarea {
         <h2>プロット・メモ</h2>
         <button class="close-btn" onclick="hidePlot()">×</button>
       </div>
-      <textarea id="plotWork" class="plot-textarea"></textarea>
-      <div class="plot-symbol-bar">
+      <textarea id="plotWork" class="plot-textarea" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+      
+      <!-- プロット専用記号バー -->
+      <div class="symbol-bar plot-symbol-bar">
         <button class="symbol-btn" onclick="insertPlotSymbol('――')">――</button>
         <button class="symbol-btn" onclick="insertPlotSymbol('……')">……</button>
         <button class="symbol-btn" onclick="insertPlotBracket('「', '」')">「」</button>
@@ -856,7 +862,8 @@ textarea.title-textarea {
         <button class="symbol-btn history-btn" onclick="undoPlot()" aria-label="プロットの入力を1つ戻す" title="プロットの入力を1つ戻す">↶<span class="history-btn-label"> 戻る</span></button>
         <button class="symbol-btn history-btn" onclick="redoPlot()" aria-label="プロットの入力を1つ進める" title="プロットの入力を1つ進める">↷<span class="history-btn-label"> 進む</span></button>
       </div>
-      <div style="display:flex;justify-content:flex-end;gap:8px;">
+
+      <div class="modal-footer-btns" style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
         <button class="secondary" onclick="hidePlot()">閉じる</button>
         <button class="primary" onclick="savePlot()">保存する</button>
       </div>
@@ -922,10 +929,15 @@ let editingProjectId = null;
 let savedCaretStart = null;
 let savedCaretEnd = null;
 
-// プロット／メモPOPUP用のキャレット退避変数。
-// 本文側のsavedCaretStart/Endとは完全に分離し、互いに影響しない。
+// プロット（plotWork）用カーソル位置退避変数
 let savedPlotCaretStart = null;
 let savedPlotCaretEnd = null;
+
+// プロット専用Undo / Redo 履歴管理
+let plotHistory = [];
+let plotHistoryIndex = -1;
+const MAX_PLOT_HISTORY = 100;
+
 let saveFailed = false;
 const STORAGE_WARN_THRESHOLD = 4.5 * 1024 * 1024; // 目安5MBに対する警告ライン
 
@@ -945,7 +957,7 @@ function formatDatetimeLocal(d) {
   const dateObj = (d instanceof Date) ? d : new Date(d);
   if (isNaN(dateObj.getTime())) return '';
   const pad = n => String(n).padStart(2, '0');
-  return `${dateObj.getFullYear()}-${pad(dateObj.getMonth() + 1)}-${pad(dateObj.getDate())}T${pad(dateObj.getHours())}:${pad(dateObj.getMinutes())}`;
+  return `${dateObj.getFullYear()}-${pad(dateObj.getMonth() + 1)}T${pad(dateObj.getHours())}:${pad(dateObj.getMinutes())}`;
 }
 
 function formatDisplayDate(isoStr) {
@@ -1770,10 +1782,132 @@ function redoManuscript() {
   try { document.execCommand('redo'); } catch (e) {}
 }
 
+/* --- プロット専用操作 ＆ Undo/Redo管理 --- */
+
+function savePlotCaret() {
+  const el = $('plotWork');
+  if (!el) return;
+  savedPlotCaretStart = el.selectionStart;
+  savedPlotCaretEnd = el.selectionEnd;
+}
+
+function pushPlotHistory() {
+  const el = $('plotWork');
+  if (!el) return;
+  const currentVal = el.value;
+  const currentStart = el.selectionStart ?? currentVal.length;
+  const currentEnd = el.selectionEnd ?? currentVal.length;
+
+  if (plotHistoryIndex >= 0 && plotHistory[plotHistoryIndex]) {
+    const lastState = plotHistory[plotHistoryIndex];
+    if (lastState.text === currentVal) {
+      return;
+    }
+  }
+
+  plotHistory = plotHistory.slice(0, plotHistoryIndex + 1);
+  plotHistory.push({
+    text: currentVal,
+    start: currentStart,
+    end: currentEnd
+  });
+  if (plotHistory.length > MAX_PLOT_HISTORY) {
+    plotHistory.shift();
+  }
+  plotHistoryIndex = plotHistory.length - 1;
+}
+
+function undoPlot() {
+  const el = $('plotWork');
+  if (!el) return;
+
+  if (plotHistoryIndex > 0) {
+    plotHistoryIndex--;
+    const state = plotHistory[plotHistoryIndex];
+    el.value = state.text;
+    el.focus();
+    el.setSelectionRange(state.start, state.end);
+    savePlotCaret();
+    saveData();
+  }
+}
+
+function redoPlot() {
+  const el = $('plotWork');
+  if (!el) return;
+
+  if (plotHistoryIndex < plotHistory.length - 1) {
+    plotHistoryIndex++;
+    const state = plotHistory[plotHistoryIndex];
+    el.value = state.text;
+    el.focus();
+    el.setSelectionRange(state.start, state.end);
+    savePlotCaret();
+    saveData();
+  }
+}
+
+function insertPlotSymbol(symbol) {
+  const el = $('plotWork');
+  if (!el) return;
+  el.focus();
+
+  if (savedPlotCaretStart !== null && savedPlotCaretEnd !== null) {
+    el.setSelectionRange(savedPlotCaretStart, savedPlotCaretEnd);
+  }
+
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+
+  el.setRangeText(symbol, start, end, 'end');
+  const newPos = start + symbol.length;
+  el.setSelectionRange(newPos, newPos);
+
+  savePlotCaret();
+  pushPlotHistory();
+  saveData();
+}
+
+function insertPlotBracket(open, close) {
+  const el = $('plotWork');
+  if (!el) return;
+  el.focus();
+
+  if (savedPlotCaretStart !== null && savedPlotCaretEnd !== null) {
+    el.setSelectionRange(savedPlotCaretStart, savedPlotCaretEnd);
+  }
+
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+  const selectedText = el.value.substring(start, end);
+
+  const textToInsert = open + selectedText + close;
+  el.setRangeText(textToInsert, start, end, 'end');
+
+  if (start === end) {
+    const newPos = start + open.length;
+    el.setSelectionRange(newPos, newPos);
+  } else {
+    el.setSelectionRange(start + open.length, start + open.length + selectedText.length);
+  }
+
+  savePlotCaret();
+  pushPlotHistory();
+  saveData();
+}
+
 function showPlot() {
   if (db.currentId && db.projects[db.currentId]) {
     $('plotWork').value = db.projects[db.currentId].plot || '';
   }
+
+  plotHistory = [{
+    text: $('plotWork').value,
+    start: 0,
+    end: 0
+  }];
+  plotHistoryIndex = 0;
+
   $('plotOverlay').classList.remove('hidden');
   openModalWithFocusTrap($('plotOverlay'));
 }
@@ -1789,142 +1923,6 @@ function savePlot() {
   hidePlot();
   toast('プロットを保存しました');
 }
-
-// ここから、プロット／メモPOPUP専用の記号／括弧／Undo/Redo処理。
-// 本文入力欄（manuscript）側の同名の仕組み（insertSymbol、insertBracket、
-// insertTextPreservingUndo、savedCaretStart/End等）とは変数・関数とも
-// 完全に分離しており、本文側の処理には一切影響しない。
-// また、プロット／メモには本文のような「Enterで行頭に全角スペースを
-// 自動挿入する」仕様がないため、本文側にある行頭スペース除去処理
-//（stripLeadingSpacesAtCursor・replaceAutoIndentOnMobile相当）は
-// 存在しない・不要である。
-
-function savePlotCaret() {
-  const el = $('plotWork');
-  if (!el) return;
-  savedPlotCaretStart = el.selectionStart;
-  savedPlotCaretEnd = el.selectionEnd;
-}
-
-function ensurePlotSelection() {
-  const el = $('plotWork');
-  if (!el) return;
-  if (savedPlotCaretStart !== null && savedPlotCaretEnd !== null) {
-    const max = el.value.length;
-    const start = Math.min(savedPlotCaretStart, max);
-    const end = Math.min(savedPlotCaretEnd, max);
-    el.setSelectionRange(start, end);
-  }
-}
-
-// テキストをUndo/Redo可能な形でプロットへ挿入する共通ヘルパー。
-// 本文側のinsertTextPreservingUndo()と同じ考え方（execCommandの
-// 実行直後にselectionStart/Endを自前で計算し直して確定させる）を
-// プロット側専用の状態（savedPlotCaretStart/End）に対して行う。
-function insertTextPreservingUndoPlot(el, text) {
-  el.focus();
-  const start = el.selectionStart;
-  const end = el.selectionEnd;
-  let ok = false;
-  try {
-    ok = document.execCommand('insertText', false, text);
-  } catch (e) {
-    ok = false;
-  }
-  if (!ok) {
-    el.setRangeText(text, start, end, 'end');
-  }
-
-  const expectedPos = start + text.length;
-  if (el.selectionStart !== expectedPos || el.selectionEnd !== expectedPos) {
-    el.setSelectionRange(expectedPos, expectedPos);
-  }
-
-  savedPlotCaretStart = el.selectionStart;
-  savedPlotCaretEnd = el.selectionEnd;
-}
-
-function insertPlotSymbol(symbol) {
-  const el = $('plotWork');
-  if (!el) return;
-
-  ensurePlotSelection();
-  insertTextPreservingUndoPlot(el, symbol);
-  saveData();
-}
-
-function insertPlotBracket(open, close) {
-  const el = $('plotWork');
-  if (!el) return;
-
-  ensurePlotSelection();
-
-  const currentStart = el.selectionStart;
-  const currentEnd = el.selectionEnd;
-  const selectedText = el.value.substring(currentStart, currentEnd);
-
-  insertTextPreservingUndoPlot(el, open + selectedText + close);
-
-  if (currentStart === currentEnd) {
-    const newPos = currentStart + open.length;
-    el.setSelectionRange(newPos, newPos);
-  } else {
-    el.setSelectionRange(currentStart + open.length, currentStart + open.length + selectedText.length);
-  }
-  savedPlotCaretStart = el.selectionStart;
-  savedPlotCaretEnd = el.selectionEnd;
-
-  saveData();
-}
-
-function undoPlot() {
-  const el = $('plotWork');
-  if (!el) return;
-  el.focus();
-  try { document.execCommand('undo'); } catch (e) {}
-}
-
-function redoPlot() {
-  const el = $('plotWork');
-  if (!el) return;
-  el.focus();
-  try { document.execCommand('redo'); } catch (e) {}
-}
-
-// プロットのカーソル移動・入力・フォーカス解除のたびに位置を退避しておく。
-$('plotWork').addEventListener('keyup', savePlotCaret);
-$('plotWork').addEventListener('click', savePlotCaret);
-$('plotWork').addEventListener('mouseup', savePlotCaret);
-$('plotWork').addEventListener('select', savePlotCaret);
-$('plotWork').addEventListener('blur', savePlotCaret);
-
-// プロットの通常入力（タイピング・貼り付け・Undo/Redoによる変更を含む、
-// execCommandは'input'イベントを発火するため）のたびに保存する。
-// 本文のsaveData()呼び出し方針（inputイベントで都度保存）とそろえている。
-$('plotWork').addEventListener('input', () => {
-  saveData();
-  savePlotCaret();
-});
-
-// プロット記号バーのボタンをマウス/タップで押した際、本文側と同じ理由
-// （フォーカスが外れるとスマホでキーボードが一旦閉じてしまうこと）で、
-// plotWorkからフォーカスが外れないようにする。
-(function () {
-  const bar = document.querySelector('.plot-symbol-bar');
-  if (!bar) return;
-
-  bar.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('.symbol-btn')) {
-      savePlotCaret();
-    }
-  });
-
-  bar.addEventListener('mousedown', (e) => {
-    if (e.target.closest('.symbol-btn')) {
-      e.preventDefault();
-    }
-  });
-})();
 
 function exportTxt() {
   saveNow();
@@ -2051,21 +2049,49 @@ $('manuscript').addEventListener('mouseup', saveManuscriptCaret);
 $('manuscript').addEventListener('select', saveManuscriptCaret);
 $('manuscript').addEventListener('blur', saveManuscriptCaret);
 
+/* --- プロット入力欄（plotWork）イベント登録 --- */
+$('plotWork').addEventListener('keyup', savePlotCaret);
+$('plotWork').addEventListener('click', savePlotCaret);
+$('plotWork').addEventListener('mouseup', savePlotCaret);
+$('plotWork').addEventListener('select', savePlotCaret);
+$('plotWork').addEventListener('blur', savePlotCaret);
+
+$('plotWork').addEventListener('input', () => {
+  savePlotCaret();
+  pushPlotHistory();
+  saveData();
+});
+
 (function () {
   const bar = document.querySelector('.symbol-bar');
-  if (!bar) return;
+  if (bar) {
+    bar.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.symbol-btn')) {
+        saveManuscriptCaret();
+      }
+    });
 
-  bar.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('.symbol-btn')) {
-      saveManuscriptCaret();
-    }
-  });
+    bar.addEventListener('mousedown', (e) => {
+      if (e.target.closest('.symbol-btn')) {
+        e.preventDefault();
+      }
+    });
+  }
 
-  bar.addEventListener('mousedown', (e) => {
-    if (e.target.closest('.symbol-btn')) {
-      e.preventDefault();
-    }
-  });
+  const plotBar = document.querySelector('.plot-symbol-bar');
+  if (plotBar) {
+    plotBar.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.symbol-btn')) {
+        savePlotCaret();
+      }
+    });
+
+    plotBar.addEventListener('mousedown', (e) => {
+      if (e.target.closest('.symbol-btn')) {
+        e.preventDefault();
+      }
+    });
+  }
 })();
 
 $('manuscript').addEventListener('input', () => { 
