@@ -7,9 +7,9 @@
 <!-- PWA (ホーム画面追加) 対応 -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="ゆけむり">
+<meta name="apple-mobile-web-app-title" content="かんづめの宿">
 
-<title>Web旅館 ゆけむり</title>
+<title>かんづめの宿</title>
 <style>
 :root{
   --bg-dark:#1a1817;
@@ -84,12 +84,12 @@ header{
   gap:12px;
   border-bottom:1px solid rgba(255,255,255,0.08);
 }
-.kamon{font-size:11px;letter-spacing:.25em;opacity:.65;text-transform:uppercase;margin-bottom:2px}
-h1{margin:0;font-size:clamp(18px,3.5vw,26px);font-weight:500;letter-spacing:0.04em}
+.kamon{font-size:12pt;letter-spacing:0;opacity:.65;text-transform:uppercase;margin-bottom:2px}
+h1{margin:0;font-size:clamp(18px,3.5vw,26px);font-weight:800;letter-spacing:0.04em}
 .setup{padding:28px 32px;display:grid;gap:20px}
 .section-title{
   font-weight:600;
-  font-size:13px;
+  font-size:14px;
   color:var(--muted);
   letter-spacing:0.05em;
   text-transform:uppercase;
@@ -639,6 +639,7 @@ textarea.title-textarea {
 @media(max-width:600px){
   .screen-lobby{ padding:10px; }
   header{ padding:14px 16px; flex-direction:row; align-items:center; }
+  .kamon{ font-size:11pt; }
   header .primary{ padding:8px 12px; font-size:12px; }
   .setup{ padding:16px 14px; gap:14px; }
   .grid{ grid-template-columns:1fr; gap:8px; }
@@ -696,8 +697,8 @@ textarea.title-textarea {
   <div class="card">
     <header>
       <div>
-        <div class="kamon">Web原稿合宿専用宿</div>
-        <h1>Web旅館 ゆけむり</h1>
+        <div class="kamon">Web原稿合宿専用</div>
+        <h1>かんづめの宿</h1>
       </div>
       <button class="primary" onclick="showNewProjectModal()">＋ 新規プラン作成</button>
     </header>
