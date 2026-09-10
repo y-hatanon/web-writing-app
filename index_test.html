@@ -1686,7 +1686,12 @@ function insertSymbolCore(el, symbol, caretState) {
   const end = el.selectionEnd;
 
   if (start === end) {
-    const lineStart = val.lastIndexOf('\n', start - 1) + 1;
+    // start=0のとき、String#lastIndexOf(searchValue, -1)はJSの仕様上
+    // fromIndexが0として扱われるため、val[0]がちょうど改行文字だった
+    // 場合（＝1行目が完全な空行）に、誤って1文字後ろの位置を
+    // 行頭と判定してしまう。start===0は常に行頭そのものなので、
+    // その場合は検索せず直接0とする。
+    const lineStart = start === 0 ? 0 : val.lastIndexOf('\n', start - 1) + 1;
     const atLineStart = start === lineStart;
     const hasLeadingSpace = val[lineStart] === FULL_WIDTH_SPACE;
 
@@ -1744,7 +1749,12 @@ function handleEnterKeyCore(el, caretState) {
   const start = el.selectionStart;
   const end = el.selectionEnd;
 
-  const lineStart = val.lastIndexOf('\n', start - 1) + 1;
+  // start=0のとき、String#lastIndexOf(searchValue, -1)はJSの仕様上
+  // fromIndexが0として扱われるため、val[0]がちょうど改行文字だった
+  // 場合（＝1行目が完全な空行）に、誤って1文字後ろの位置を
+  // 行頭と判定してしまう。start===0は常に行頭そのものなので、
+  // その場合は検索せず直接0とする。
+  const lineStart = start === 0 ? 0 : val.lastIndexOf('\n', start - 1) + 1;
   let lineEnd = val.indexOf('\n', end);
   if (lineEnd === -1) lineEnd = val.length;
   const lineText = val.slice(lineStart, lineEnd);
@@ -1761,13 +1771,19 @@ function handleEnterKeyCore(el, caretState) {
     return;
   }
 
-  const afterCursor = val.slice(end, lineEnd);
-  if (afterCursor.startsWith(FULL_WIDTH_SPACE)) {
-    // 新しい行の先頭になる部分に、既に全角スペースがある場合は
-    // 追加せず、その直後（本文の入力開始位置）へカーソルを進める。
+  let leadingSpaceCount = 0;
+  while (lineText[leadingSpaceCount] === FULL_WIDTH_SPACE) leadingSpaceCount++;
+
+  // カーソルが行頭の全角スペースの中、またはその直後（＝スペースと
+  // 本文の間）にある場合：新たな全角スペースは追加せず、改行だけを
+  // 挿入する。既存の全角スペースの移動・削除も行わない。
+  // （行頭の全角スペースの「前」でEnterした場合と同じ扱いにする。）
+  if (start === end && leadingSpaceCount > 0 && start <= lineStart + leadingSpaceCount) {
     insertTextPreservingUndoCore(el, '\n', caretState);
+    // 挿入直後の位置から続く全角スペースがあれば、その直後
+    //（本文の入力開始位置）までカーソルを進める。
     let spaceCount = 0;
-    while (afterCursor[spaceCount] === FULL_WIDTH_SPACE) spaceCount++;
+    while (el.value[el.selectionStart + spaceCount] === FULL_WIDTH_SPACE) spaceCount++;
     const newPos = el.selectionStart + spaceCount;
     el.setSelectionRange(newPos, newPos);
     caretState.start = newPos;
