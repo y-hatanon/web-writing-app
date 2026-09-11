@@ -606,9 +606,14 @@ textarea.title-textarea {
 .close-btn{border:0;background:none;font-size:20px;color:var(--muted);cursor:pointer;padding:0 4px}
 .plot-textarea{width:100%;flex:1;min-height:200px;border:1px solid var(--line);border-radius:6px;padding:12px;line-height:1.7;font-size:13.5px;resize:vertical;margin-bottom:16px}
 
-/* プロット用記号バー */
-.plot-symbol-bar {
-  margin-top: 8px;
+/* 記号バーは本文・プロット共通の単一DOM要素（.symbol-bar）。
+   通常は本文画面（#write）側にあり、プロットPOPUP編集中だけ
+   JS側（showPlot/hidePlot）で#plotOverlay内へ一時的に移動する。
+   PCでは、プロットPOPUP内にある間は表示しない
+  （本文編集中のPC表示は従来どおり常時表示のまま）。 */
+#plotOverlay .symbol-bar {
+  display: none;
+  margin-top: 10px;
 }
 
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#2c2c2c;color:#fff;padding:8px 20px;border-radius:20px;font-size:12.5px;box-shadow:0 4px 15px rgba(0,0,0,0.2);opacity:0;pointer-events:none;transition:.25s;z-index:200}
@@ -692,6 +697,31 @@ textarea.title-textarea {
   .footer-meta-group { gap:8px; }
   .footer-meta-btns { margin-left:auto; }
 
+  /* キーボード表示中の入力欄の見た目（背景・枠線・角丸・box-shadow・
+     文字サイズ・行間・余白）は、本文（#manuscript）・プロット
+    （.plot-textarea）共通で.sp-compact-textareaクラスにまとめている。
+     #manuscriptは元々同じ見た目のため実質的に変化なし、
+     .plot-textareaはここで初めてこの見た目になる。 */
+  body.keyboard-open .sp-compact-textarea{
+    border:1px solid var(--line);
+    border-radius:var(--radius-md);
+    background:var(--bg-paper);
+    box-shadow:none;
+    outline:none;
+    font-size:16px;
+    line-height:1.9;
+    padding:14px;
+  }
+
+  /* 記号バー（.symbol-bar）は本文・プロット共通の単一要素。
+     プロットPOPUP内にある間はPCで非表示（#plotOverlay .symbol-barの
+     基本ルール）だが、SPでキーボードが表示されている間だけは
+     本文と同じく表示し、safe-area対応も行う。 */
+  body.keyboard-open #plotOverlay .symbol-bar{
+    display:grid;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+
   /* プロット編集画面のスマホキーボード表示時UI調整 */
   body.keyboard-open #plotOverlay {
     padding: 0;
@@ -714,13 +744,6 @@ textarea.title-textarea {
   }
   body.keyboard-open #plotOverlay .plot-textarea {
     margin-bottom: 0;
-    font-size: 16px;
-    padding: 14px;
-    border-radius: var(--radius-md);
-    background: var(--bg-paper);
-    border: 1px solid var(--line);
-    box-shadow: none;
-    outline: none;
   }
 }
 </style>
@@ -776,6 +799,7 @@ textarea.title-textarea {
 
     <div class="editor-main">
       <textarea id="manuscript" 
+                class="sp-compact-textarea"
                 tabindex="2"
                 placeholder="ここに本文を執筆してください……"
                 autocomplete="off" 
@@ -785,15 +809,17 @@ textarea.title-textarea {
     </div>
 
     <div class="editor-footer">
-      <!-- 上段：ライトな記号入力バー -->
+      <!-- 本文・プロット共通の記号バー（DOM上は1個だけ）。
+           プロットPOPUP編集中はJS（showPlot/hidePlot）がこの要素を
+           #plotOverlay側へ一時的に移動する。 -->
       <div class="symbol-bar">
-        <button class="symbol-btn" tabindex="3" onclick="insertSymbol('――')">――</button>
-        <button class="symbol-btn" tabindex="4" onclick="insertSymbol('……')">……</button>
-        <button class="symbol-btn" tabindex="5" onclick="insertBracket('「', '」')">「」</button>
-        <button class="symbol-btn" tabindex="6" onclick="insertBracket('『', '』')">『』</button>
-        <button class="symbol-btn" tabindex="7" onclick="insertBracket('（', '）')">（）</button>
-        <button class="symbol-btn history-btn" tabindex="8" onclick="undoManuscript()" aria-label="本文の入力を1つ戻す" title="本文の入力を1つ戻す">↶<span class="history-btn-label"> 戻る</span></button>
-        <button class="symbol-btn history-btn" tabindex="9" onclick="redoManuscript()" aria-label="本文の入力を1つ進める" title="本文の入力を1つ進める">↷<span class="history-btn-label"> 進む</span></button>
+        <button class="symbol-btn" tabindex="3" onclick="insertSymbolShared('――')">――</button>
+        <button class="symbol-btn" tabindex="4" onclick="insertSymbolShared('……')">……</button>
+        <button class="symbol-btn" tabindex="5" onclick="insertBracketShared('「', '」')">「」</button>
+        <button class="symbol-btn" tabindex="6" onclick="insertBracketShared('『', '』')">『』</button>
+        <button class="symbol-btn" tabindex="7" onclick="insertBracketShared('（', '）')">（）</button>
+        <button class="symbol-btn history-btn" tabindex="8" onclick="undoShared()" aria-label="入力を1つ戻す" title="入力を1つ戻す">↶<span class="history-btn-label"> 戻る</span></button>
+        <button class="symbol-btn history-btn" tabindex="9" onclick="redoShared()" aria-label="入力を1つ進める" title="入力を1つ進める">↷<span class="history-btn-label"> 進む</span></button>
       </div>
 
       <!-- 下段：目立つダークブラウンのメイン操作ボタン -->
@@ -816,7 +842,8 @@ textarea.title-textarea {
         </div>
         <div class="footer-meta-btns">
           <button class="secondary" tabindex="14" style="padding:2px 8px;font-size:11px;" onclick="showFontSettings()">Aa 文字設定</button>
-          <button class="secondary backup-btn" tabindex="15" style="padding:2px 8px;font-size:11px;" onclick="exportBackupData()">JSONバックアップ</button>
+          <button class="secondary" tabindex="15" style="padding:2px 8px;font-size:11px;" onclick="cleanupManuscriptSpaces()">␣掃除</button>
+          <button class="secondary backup-btn" tabindex="16" style="padding:2px 8px;font-size:11px;" onclick="exportBackupData()">JSONバックアップ</button>
         </div>
       </div>
     </div>
@@ -855,18 +882,7 @@ textarea.title-textarea {
         <h2>プロット・メモ</h2>
         <button class="close-btn" onclick="hidePlot()">×</button>
       </div>
-      <textarea id="plotWork" class="plot-textarea" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
-      
-      <!-- プロット専用記号バー -->
-      <div class="symbol-bar plot-symbol-bar">
-        <button class="symbol-btn" onclick="insertPlotSymbol('――')">――</button>
-        <button class="symbol-btn" onclick="insertPlotSymbol('……')">……</button>
-        <button class="symbol-btn" onclick="insertPlotBracket('「', '」')">「」</button>
-        <button class="symbol-btn" onclick="insertPlotBracket('『', '』')">『』</button>
-        <button class="symbol-btn" onclick="insertPlotBracket('（', '）')">（）</button>
-        <button class="symbol-btn history-btn" onclick="undoPlot()" aria-label="プロットの入力を1つ戻す" title="プロットの入力を1つ戻す">↶<span class="history-btn-label"> 戻る</span></button>
-        <button class="symbol-btn history-btn" onclick="redoPlot()" aria-label="プロットの入力を1つ進める" title="プロットの入力を1つ進める">↷<span class="history-btn-label"> 進む</span></button>
-      </div>
+      <textarea id="plotWork" class="plot-textarea sp-compact-textarea" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
 
       <div class="modal-footer-btns" style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
         <button class="secondary" onclick="hidePlot()">閉じる</button>
@@ -927,21 +943,12 @@ let db = {
 let timerId, autoId;
 let editingProjectId = null;
 
-// 本文入力欄（manuscript）が記号ボタン等へのフォーカス移動でblurした場合に、
-// 直前のカーソル位置（selectionStart/End）を退避しておくための変数。
-// Tabキーで記号ボタンへ移動→クリックした際、textareaのカーソル位置が
-// 正しく復元されないまま記号が挿入される不具合を防ぐために使用する。
-let savedCaretStart = null;
-let savedCaretEnd = null;
-
-// プロット（plotWork）用カーソル位置退避変数
-let savedPlotCaretStart = null;
-let savedPlotCaretEnd = null;
-
-// プロット専用Undo / Redo 履歴管理
-let plotHistory = [];
-let plotHistoryIndex = -1;
-const MAX_PLOT_HISTORY = 100;
+// 本文・プロットそれぞれのカーソル位置退避用の状態オブジェクト。
+// 「入力ルール（挿入処理・行頭全角スペース処理等）」は共通関数として
+// 本文・プロットの両方から利用するが、カーソル位置の退避先だけは
+// textareaごとに別オブジェクトとして分離し、互いに影響しないようにする。
+const manuscriptCaret = { start: null, end: null };
+const plotCaret = { start: null, end: null };
 
 let saveFailed = false;
 const STORAGE_WARN_THRESHOLD = 4.5 * 1024 * 1024; // 目安5MBに対する警告ライン
@@ -1463,6 +1470,43 @@ function saveNow() {
   toast('原稿を保存しました');
 }
 
+// 「␣掃除」：本文専用。全角・半角スペースを同じ「スペース」として扱い、
+// ・スペースだけで構成された行 → 完全な空行にする
+// ・各行の末尾にある全角・半角スペース → 削除する
+// のみを行う。行頭のスペース・行途中のスペース・文章内容は一切変更しない
+//（字下げの追加・救済は行わない）。プロットには追加しない（本文のみ）。
+// 既に掃除済みの内容に対して実行しても変化しないよう、変化がない場合は
+// 何もしない。
+function cleanupManuscriptSpaces() {
+  const el = $('manuscript');
+  if (!el) return;
+
+  const isSpaceChar = (ch) => ch === FULL_WIDTH_SPACE || ch === ' ';
+
+  const cleanedLines = el.value.split('\n').map((line) => {
+    if (line.length > 0 && [...line].every(isSpaceChar)) {
+      return '';
+    }
+    let end = line.length;
+    while (end > 0 && isSpaceChar(line[end - 1])) end--;
+    return line.slice(0, end);
+  });
+
+  const newValue = cleanedLines.join('\n');
+  if (newValue === el.value) {
+    toast('スペースはありませんでした');
+    return;
+  }
+
+  el.focus();
+  el.setSelectionRange(0, el.value.length);
+  insertTextPreservingUndoCore(el, newValue, manuscriptCaret);
+
+  update();
+  saveData();
+  toast('␣掃除を実行しました');
+}
+
 // キャレット（カーソル）の実際のピクセル位置を、隠しミラー要素で計測し、
 // 表示範囲外にある場合だけ必要最小限スクロールする。
 // 「常に最下部までスクロール」ではなく、実際のカーソル位置を考慮する。
@@ -1525,8 +1569,30 @@ function update() {
   $('percent').textContent = Math.floor(n / g * 100) + '%';
 }
 
-// テキストをUndo/Redo可能な形で挿入する共通ヘルパー。
-function insertTextPreservingUndo(el, text) {
+// ============================================================
+// 共通入力ルール（本文・プロット共通の基本操作）
+// ============================================================
+// Enterの改行＋行頭全角スペース、記号／括弧挿入、行頭全角スペースの
+// 扱い（A/B/C）、Undo/Redoは「文章を書くときの基本ルール」として
+// 本文（manuscript）とプロット（plotWork）の両方が共通で利用する。
+//
+// 実際に編集されるtextarea要素と、カーソル位置の退避先
+//（manuscriptCaret / plotCaret）だけを呼び出し側から渡すことで、
+// データ・編集履歴は本文・プロットで独立したまま処理だけを共通化する。
+// なお、Undo/Redoはdocument.execCommandのブラウザ標準履歴を使っており、
+// この履歴はtextarea要素ごとに個別に保持されるため、本文とプロットの
+// 編集履歴は元々自然に分離されている。
+
+// テキストをUndo/Redo可能な形で挿入する共通処理。
+// document.execCommand('insertText', ...)はブラウザの標準Undo履歴に
+// そのまま積まれるため、Ctrl+Z / Cmd+Zが自然に効く。
+// 非対応環境向けにsetRangeTextへのフォールバックも用意する。
+//
+// execCommand実行直後、selectionStart/Endがブラウザ内部でまだ
+// 古い位置のままになっている場合があるため、挿入前の位置と
+// 挿入した文字列の長さから挿入後にあるべき位置を自前で計算し、
+// setSelectionRangeで明示的に確定させる。
+function insertTextPreservingUndoCore(el, text, caretState) {
   el.focus();
   const start = el.selectionStart;
   const end = el.selectionEnd;
@@ -1538,8 +1604,6 @@ function insertTextPreservingUndo(el, text) {
   }
   if (!ok) {
     el.setRangeText(text, start, end, 'end');
-    update();
-    saveData();
   }
 
   const expectedPos = start + text.length;
@@ -1547,32 +1611,35 @@ function insertTextPreservingUndo(el, text) {
     el.setSelectionRange(expectedPos, expectedPos);
   }
 
-  savedCaretStart = el.selectionStart;
-  savedCaretEnd = el.selectionEnd;
+  caretState.start = el.selectionStart;
+  caretState.end = el.selectionEnd;
 }
 
-function saveManuscriptCaret() {
-  const el = $('manuscript');
+function saveCaretCore(el, caretState) {
   if (!el) return;
-  savedCaretStart = el.selectionStart;
-  savedCaretEnd = el.selectionEnd;
+  caretState.start = el.selectionStart;
+  caretState.end = el.selectionEnd;
 }
 
-function ensureManuscriptSelection() {
-  const el = $('manuscript');
+// フォーカスが記号ボタン側へ移っていても、退避しておいたカーソル位置を
+// textareaのselectionRangeへ復元してから後続の処理へ渡す。
+function ensureSelectionCore(el, caretState) {
   if (!el) return;
-  if (savedCaretStart !== null && savedCaretEnd !== null) {
+  if (caretState.start !== null && caretState.end !== null) {
     const max = el.value.length;
-    const start = Math.min(savedCaretStart, max);
-    const end = Math.min(savedCaretEnd, max);
+    const start = Math.min(caretState.start, max);
+    const end = Math.min(caretState.end, max);
     el.setSelectionRange(start, end);
   }
 }
 
-function stripLeadingSpacesAtCursor() {
-  const el = $('manuscript');
+// 行頭全角スペースの扱い：
+// A. カーソルが行頭の全角スペース位置にある → 削除してから記号／括弧を挿入
+// B. カーソルが文章途中にある → 行頭スペースには触らず、その位置に挿入
+// C. 範囲選択がある → 行頭スペースを勝手に削除しない
+function stripLeadingSpacesAtCursorCore(el, caretState) {
   if (!el) return false;
-  ensureManuscriptSelection();
+  ensureSelectionCore(el, caretState);
 
   const val = el.value;
   const start = el.selectionStart;
@@ -1591,21 +1658,20 @@ function stripLeadingSpacesAtCursor() {
   if (start > lineStart + spacesCount) return false;
 
   el.setSelectionRange(lineStart, lineStart + spacesCount);
-  insertTextPreservingUndo(el, '');
+  insertTextPreservingUndoCore(el, '', caretState);
   return true;
 }
 
 // SPでEnter直後に自動挿入された行頭全角スペースだけを、1回の編集コマンドで置換する。
 // 空文字での削除と記号挿入を別々に実行すると、iOS等でネイティブの編集位置が
 // Enter前の行末へ戻ることがあるため、この限定経路では中間コマンドを作らない。
-function replaceAutoIndentOnMobile(text) {
-  const el = $('manuscript');
+function replaceAutoIndentOnMobileCore(el, text, caretState) {
   if (!el) return null;
 
   const isSP = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
   if (!isSP) return null;
 
-  ensureManuscriptSelection();
+  ensureSelectionCore(el, caretState);
   const val = el.value;
   const start = el.selectionStart;
   const end = el.selectionEnd;
@@ -1632,51 +1698,70 @@ function replaceAutoIndentOnMobile(text) {
   if (el.selectionStart !== endPos || el.selectionEnd !== endPos) {
     el.setSelectionRange(endPos, endPos);
   }
-  savedCaretStart = el.selectionStart;
-  savedCaretEnd = el.selectionEnd;
+  caretState.start = el.selectionStart;
+  caretState.end = el.selectionEnd;
   return { lineStart, endPos };
 }
 
-function insertSymbol(symbol) {
-  const el = $('manuscript');
+// ――・……は「行頭では全角スペース1個を保証する。文章途中では
+// スペースを追加・削除しない」という記号自体の仕様のため、
+// 他の記号のような行頭全角スペースの削除・置換（stripLeadingSpacesAtCursorCore・
+// replaceAutoIndentOnMobileCore）は使わない。
+//
+// ケース1：行頭（そこにまだ全角スペースが無い。textarea先頭も含む）
+//   → 全角スペースを1個補ってから記号を挿入する
+// ケース2：行頭に既に全角スペースがある（Enter直後など）
+//   → 何も追加・削除せず、現在のカーソル位置にそのまま挿入する
+// ケース3：文章途中
+//   → 何も追加・削除せず、現在のカーソル位置にそのまま挿入する
+function insertSymbolCore(el, symbol, caretState) {
   if (!el) return;
 
-  if (replaceAutoIndentOnMobile(symbol)) {
-    update();
-    saveData();
-    return;
+  ensureSelectionCore(el, caretState);
+
+  const val = el.value;
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+
+  if (start === end) {
+    // start=0のとき、String#lastIndexOf(searchValue, -1)はJSの仕様上
+    // fromIndexが0として扱われるため、val[0]がちょうど改行文字だった
+    // 場合（＝1行目が完全な空行）に、誤って1文字後ろの位置を
+    // 行頭と判定してしまう。start===0は常に行頭そのものなので、
+    // その場合は検索せず直接0とする。
+    const lineStart = start === 0 ? 0 : val.lastIndexOf('\n', start - 1) + 1;
+    const atLineStart = start === lineStart;
+    const hasLeadingSpace = val[lineStart] === FULL_WIDTH_SPACE;
+
+    if (atLineStart && !hasLeadingSpace) {
+      insertTextPreservingUndoCore(el, FULL_WIDTH_SPACE + symbol, caretState);
+      return;
+    }
   }
 
-  stripLeadingSpacesAtCursor();
-  insertTextPreservingUndo(el, symbol);
-
-  update();
-  saveData();
+  insertTextPreservingUndoCore(el, symbol, caretState);
 }
 
-function insertBracket(open, close) {
-  const el = $('manuscript');
+function insertBracketCore(el, open, close, caretState) {
   if (!el) return;
 
-  const mobileReplacement = replaceAutoIndentOnMobile(open + close);
+  const mobileReplacement = replaceAutoIndentOnMobileCore(el, open + close, caretState);
   if (mobileReplacement) {
     const newPos = mobileReplacement.lineStart + open.length;
-      el.setSelectionRange(newPos, newPos);
-    savedCaretStart = newPos;
-    savedCaretEnd = newPos;
-    update();
-    saveData();
+    el.setSelectionRange(newPos, newPos);
+    caretState.start = newPos;
+    caretState.end = newPos;
     return;
   }
 
   // --- 従来どおりの動作（PC、またはSPでEnter直後以外の通常挿入） ---
-  stripLeadingSpacesAtCursor();
+  stripLeadingSpacesAtCursorCore(el, caretState);
 
   const currentStart = el.selectionStart;
   const currentEnd = el.selectionEnd;
   const selectedText = el.value.substring(currentStart, currentEnd);
 
-  insertTextPreservingUndo(el, open + selectedText + close);
+  insertTextPreservingUndoCore(el, open + selectedText + close, caretState);
 
   if (currentStart === currentEnd) {
     const newPos = currentStart + open.length;
@@ -1684,9 +1769,91 @@ function insertBracket(open, close) {
   } else {
     el.setSelectionRange(currentStart + open.length, currentStart + open.length + selectedText.length);
   }
+  caretState.start = el.selectionStart;
+  caretState.end = el.selectionEnd;
+}
 
-  update();
+// Enterキー処理：改行＋行頭全角スペース。本文・プロット共通の基本ルール。
+// 現在の行・前の行にある既存のスペースは削除・変更しない
+// （空行に全角スペースが残ること、連続Enterで空行が積み重なることは
+//  仕様として許容する）。
+// ただし、Enterによって新しくできる行の先頭が「『（のいずれかに
+// なる場合は、全角スペースを自動挿入しない（括弧自体が字下げの
+// 役割を果たすため）。
+function handleEnterKeyCore(el, caretState) {
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+
+  if (start === end) {
+    const nextChar = el.value[start];
+    if (nextChar === '「' || nextChar === '『' || nextChar === '（') {
+      insertTextPreservingUndoCore(el, '\n', caretState);
+      return;
+    }
+  }
+
+  insertTextPreservingUndoCore(el, '\n' + FULL_WIDTH_SPACE, caretState);
+}
+
+function undoCore(el) {
+  if (!el) return;
+  el.focus();
+  try { document.execCommand('undo'); } catch (e) {}
+}
+
+function redoCore(el) {
+  if (!el) return;
+  el.focus();
+  try { document.execCommand('redo'); } catch (e) {}
+}
+
+// ------------------------------------------------------------
+// 記号バー操作の共通処理。
+// 記号バー（.symbol-bar）はDOM上に1個だけ存在し、本文編集中は
+// #write側に、プロット編集中は#plotOverlay側へJS（showPlot/hidePlot）
+// が一時的に移動して使い回す。
+// ボタンが押された時点でプロットPOPUPが開いているかどうかから
+// 「現在の入力対象」を判定し、対応するtextarea・キャレット状態・
+// 保存処理だけを使い分ける。textarea自体・データ・Undo/Redo履歴・
+// キャレット状態は、本文（manuscript / manuscriptCaret）とプロット
+// （plotWork / plotCaret）で分離したまま変えていない。
+// ------------------------------------------------------------
+
+function activeEditorContext() {
+  const plotOverlay = $('plotOverlay');
+  const plotOpen = plotOverlay && !plotOverlay.classList.contains('hidden');
+  if (plotOpen) {
+    return { el: $('plotWork'), caret: plotCaret, isPlot: true };
+  }
+  return { el: $('manuscript'), caret: manuscriptCaret, isPlot: false };
+}
+
+function saveManuscriptCaret() {
+  saveCaretCore($('manuscript'), manuscriptCaret);
+}
+
+function insertSymbolShared(symbol) {
+  const ctx = activeEditorContext();
+  if (!ctx.el) return;
+  insertSymbolCore(ctx.el, symbol, ctx.caret);
+  if (!ctx.isPlot) update();
   saveData();
+}
+
+function insertBracketShared(open, close) {
+  const ctx = activeEditorContext();
+  if (!ctx.el) return;
+  insertBracketCore(ctx.el, open, close, ctx.caret);
+  if (!ctx.isPlot) update();
+  saveData();
+}
+
+function undoShared() {
+  undoCore(activeEditorContext().el);
+}
+
+function redoShared() {
+  redoCore(activeEditorContext().el);
 }
 
 // --- Tabキー制御：通常画面の完全ループ ＋ モーダルのフォーカストラップ ---
@@ -1773,132 +1940,8 @@ function toggleTitleExpand() {
   $('roomTitleDisplay').classList.toggle('expanded');
 }
 
-function undoManuscript() {
-  const el = $('manuscript');
-  if (!el) return;
-  el.focus();
-  try { document.execCommand('undo'); } catch (e) {}
-}
-
-function redoManuscript() {
-  const el = $('manuscript');
-  if (!el) return;
-  el.focus();
-  try { document.execCommand('redo'); } catch (e) {}
-}
-
-/* --- プロット専用操作 ＆ Undo/Redo管理 --- */
-
 function savePlotCaret() {
-  const el = $('plotWork');
-  if (!el) return;
-  savedPlotCaretStart = el.selectionStart;
-  savedPlotCaretEnd = el.selectionEnd;
-}
-
-function pushPlotHistory() {
-  const el = $('plotWork');
-  if (!el) return;
-  const currentVal = el.value;
-  const currentStart = el.selectionStart ?? currentVal.length;
-  const currentEnd = el.selectionEnd ?? currentVal.length;
-
-  if (plotHistoryIndex >= 0 && plotHistory[plotHistoryIndex]) {
-    const lastState = plotHistory[plotHistoryIndex];
-    if (lastState.text === currentVal) {
-      return;
-    }
-  }
-
-  plotHistory = plotHistory.slice(0, plotHistoryIndex + 1);
-  plotHistory.push({
-    text: currentVal,
-    start: currentStart,
-    end: currentEnd
-  });
-  if (plotHistory.length > MAX_PLOT_HISTORY) {
-    plotHistory.shift();
-  }
-  plotHistoryIndex = plotHistory.length - 1;
-}
-
-function undoPlot() {
-  const el = $('plotWork');
-  if (!el) return;
-
-  if (plotHistoryIndex > 0) {
-    plotHistoryIndex--;
-    const state = plotHistory[plotHistoryIndex];
-    el.value = state.text;
-    el.focus();
-    el.setSelectionRange(state.start, state.end);
-    savePlotCaret();
-    saveData();
-  }
-}
-
-function redoPlot() {
-  const el = $('plotWork');
-  if (!el) return;
-
-  if (plotHistoryIndex < plotHistory.length - 1) {
-    plotHistoryIndex++;
-    const state = plotHistory[plotHistoryIndex];
-    el.value = state.text;
-    el.focus();
-    el.setSelectionRange(state.start, state.end);
-    savePlotCaret();
-    saveData();
-  }
-}
-
-function insertPlotSymbol(symbol) {
-  const el = $('plotWork');
-  if (!el) return;
-  el.focus();
-
-  if (savedPlotCaretStart !== null && savedPlotCaretEnd !== null) {
-    el.setSelectionRange(savedPlotCaretStart, savedPlotCaretEnd);
-  }
-
-  const start = el.selectionStart;
-  const end = el.selectionEnd;
-
-  el.setRangeText(symbol, start, end, 'end');
-  const newPos = start + symbol.length;
-  el.setSelectionRange(newPos, newPos);
-
-  savePlotCaret();
-  pushPlotHistory();
-  saveData();
-}
-
-function insertPlotBracket(open, close) {
-  const el = $('plotWork');
-  if (!el) return;
-  el.focus();
-
-  if (savedPlotCaretStart !== null && savedPlotCaretEnd !== null) {
-    el.setSelectionRange(savedPlotCaretStart, savedPlotCaretEnd);
-  }
-
-  const start = el.selectionStart;
-  const end = el.selectionEnd;
-  const selectedText = el.value.substring(start, end);
-
-  const textToInsert = open + selectedText + close;
-  el.setRangeText(textToInsert, start, end, 'end');
-
-  if (start === end) {
-    const newPos = start + open.length;
-    el.setSelectionRange(newPos, newPos);
-  } else {
-    el.setSelectionRange(start + open.length, start + open.length + selectedText.length);
-  }
-
-  savePlotCaret();
-  pushPlotHistory();
-  saveData();
+  saveCaretCore($('plotWork'), plotCaret);
 }
 
 function showPlot() {
@@ -1906,17 +1949,26 @@ function showPlot() {
     $('plotWork').value = db.projects[db.currentId].plot || '';
   }
 
-  plotHistory = [{
-    text: $('plotWork').value,
-    start: 0,
-    end: 0
-  }];
-  plotHistoryIndex = 0;
+  // 共通の記号バー（DOM上に1個だけ存在する）を、プロットの
+  // textareaの直後へ一時的に移動する。ボタンやイベントリスナーは
+  // 同じ要素のまま維持されるため、複製・再生成は発生しない。
+  const bar = document.querySelector('.symbol-bar');
+  const plotTextarea = $('plotWork');
+  if (bar && plotTextarea) {
+    plotTextarea.insertAdjacentElement('afterend', bar);
+  }
 
   $('plotOverlay').classList.remove('hidden');
   openModalWithFocusTrap($('plotOverlay'));
 }
 function hidePlot() {
+  // 共通の記号バーを本文側（.editor-footerの先頭）へ戻す。
+  const bar = document.querySelector('.symbol-bar');
+  const editorFooter = document.querySelector('.editor-footer');
+  if (bar && editorFooter) {
+    editorFooter.prepend(bar);
+  }
+
   $('plotOverlay').classList.add('hidden');
   closeModalRestoreFocus();
 }
@@ -1939,15 +1991,7 @@ function exportTxt() {
   
   const rawText = p.text || '';
 
-  const indentedText = rawText.split('\n').map(line => {
-    if (line.length === 0) return line;
-    if (line.startsWith(FULL_WIDTH_SPACE)) {
-      return line;
-    }
-    return FULL_WIDTH_SPACE + line;
-  }).join('\n');
-
-  const body = `${p.title || '無題'}\n\n${indentedText}\n`;
+  const body = `${p.title || '無題'}\n\n${rawText}\n`;
 
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([body], { type: 'plain/text;charset=utf-8' }));
@@ -2040,7 +2084,7 @@ function toast(t) {
 $('manuscript').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.isComposing) {
     e.preventDefault();
-    insertTextPreservingUndo(e.target, '\n' + FULL_WIDTH_SPACE);
+    handleEnterKeyCore(e.target, manuscriptCaret);
     update();
     saveData();
     scrollTextareaToCaret(e.target);
@@ -2054,7 +2098,19 @@ $('manuscript').addEventListener('mouseup', saveManuscriptCaret);
 $('manuscript').addEventListener('select', saveManuscriptCaret);
 $('manuscript').addEventListener('blur', saveManuscriptCaret);
 
-/* --- プロット入力欄（plotWork）イベント登録 --- */
+/* --- プロット入力欄（plotWork）イベント登録 ---
+   Enterの改行＋全角スペースは、本文と同じ共通ルール（handleEnterKeyCore）
+   をそのまま利用する。PC・SPどちらでも本文と同じ動作になる。 */
+$('plotWork').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.isComposing) {
+    e.preventDefault();
+    handleEnterKeyCore(e.target, plotCaret);
+    saveData();
+    scrollTextareaToCaret(e.target);
+    savePlotCaret();
+  }
+});
+
 $('plotWork').addEventListener('keyup', savePlotCaret);
 $('plotWork').addEventListener('click', savePlotCaret);
 $('plotWork').addEventListener('mouseup', savePlotCaret);
@@ -2063,40 +2119,30 @@ $('plotWork').addEventListener('blur', savePlotCaret);
 
 $('plotWork').addEventListener('input', () => {
   savePlotCaret();
-  pushPlotHistory();
   saveData();
 });
 
+
 (function () {
   const bar = document.querySelector('.symbol-bar');
-  if (bar) {
-    bar.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('.symbol-btn')) {
-        saveManuscriptCaret();
-      }
-    });
+  if (!bar) return;
 
-    bar.addEventListener('mousedown', (e) => {
-      if (e.target.closest('.symbol-btn')) {
-        e.preventDefault();
-      }
-    });
-  }
+  // 記号バーはDOM上に1個だけであり、本文編集中・プロット編集中の
+  // どちらでも同じ要素が使われる。押された時点での「現在の入力対象」
+  // （activeEditorContext）のキャレット位置を保存しておくことで、
+  // 本文・プロットどちらの操作でも正しい位置に記号が挿入される。
+  bar.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.symbol-btn')) {
+      const ctx = activeEditorContext();
+      saveCaretCore(ctx.el, ctx.caret);
+    }
+  });
 
-  const plotBar = document.querySelector('.plot-symbol-bar');
-  if (plotBar) {
-    plotBar.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('.symbol-btn')) {
-        savePlotCaret();
-      }
-    });
-
-    plotBar.addEventListener('mousedown', (e) => {
-      if (e.target.closest('.symbol-btn')) {
-        e.preventDefault();
-      }
-    });
-  }
+  bar.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.symbol-btn')) {
+      e.preventDefault();
+    }
+  });
 })();
 
 $('manuscript').addEventListener('input', () => { 
