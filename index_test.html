@@ -842,7 +842,8 @@ textarea.title-textarea {
         </div>
         <div class="footer-meta-btns">
           <button class="secondary" tabindex="14" style="padding:2px 8px;font-size:11px;" onclick="showFontSettings()">Aa 文字設定</button>
-          <button class="secondary backup-btn" tabindex="15" style="padding:2px 8px;font-size:11px;" onclick="exportBackupData()">JSONバックアップ</button>
+          <button class="secondary" tabindex="15" style="padding:2px 8px;font-size:11px;" onclick="cleanupManuscriptSpaces()">␣掃除</button>
+          <button class="secondary backup-btn" tabindex="16" style="padding:2px 8px;font-size:11px;" onclick="exportBackupData()">JSONバックアップ</button>
         </div>
       </div>
     </div>
@@ -1469,6 +1470,43 @@ function saveNow() {
   toast('原稿を保存しました');
 }
 
+// 「␣掃除」：本文専用。全角・半角スペースを同じ「スペース」として扱い、
+// ・スペースだけで構成された行 → 完全な空行にする
+// ・各行の末尾にある全角・半角スペース → 削除する
+// のみを行う。行頭のスペース・行途中のスペース・文章内容は一切変更しない
+//（字下げの追加・救済は行わない）。プロットには追加しない（本文のみ）。
+// 既に掃除済みの内容に対して実行しても変化しないよう、変化がない場合は
+// 何もしない。
+function cleanupManuscriptSpaces() {
+  const el = $('manuscript');
+  if (!el) return;
+
+  const isSpaceChar = (ch) => ch === FULL_WIDTH_SPACE || ch === ' ';
+
+  const cleanedLines = el.value.split('\n').map((line) => {
+    if (line.length > 0 && [...line].every(isSpaceChar)) {
+      return '';
+    }
+    let end = line.length;
+    while (end > 0 && isSpaceChar(line[end - 1])) end--;
+    return line.slice(0, end);
+  });
+
+  const newValue = cleanedLines.join('\n');
+  if (newValue === el.value) {
+    toast('スペースはありませんでした');
+    return;
+  }
+
+  el.focus();
+  el.setSelectionRange(0, el.value.length);
+  insertTextPreservingUndoCore(el, newValue, manuscriptCaret);
+
+  update();
+  saveData();
+  toast('␣掃除を実行しました');
+}
+
 // キャレット（カーソル）の実際のピクセル位置を、隠しミラー要素で計測し、
 // 表示範囲外にある場合だけ必要最小限スクロールする。
 // 「常に最下部までスクロール」ではなく、実際のカーソル位置を考慮する。
@@ -1736,59 +1774,22 @@ function insertBracketCore(el, open, close, caretState) {
 }
 
 // Enterキー処理：改行＋行頭全角スペース。本文・プロット共通の基本ルール。
-//
-// ・通常の文章行でEnterした場合、新しい行の先頭には全角スペースを
-//   1個自動挿入する。
-// ・ただし、Enterによって新しい行の先頭になる部分（カーソルより後ろ）が
-//   既に全角スペースで始まっている場合は、二重にしないよう追加しない。
-// ・全角スペースだけの行（内容がすべて全角スペース）でEnterした場合は、
-//   カーソルがその行のどこにあっても、その行の全角スペースを
-//   引き継がず消す（＝空白の増殖を防ぐ）。
+// 現在の行・前の行にある既存のスペースは削除・変更しない
+// （空行に全角スペースが残ること、連続Enterで空行が積み重なることは
+//  仕様として許容する）。
+// ただし、Enterによって新しくできる行の先頭が「『（のいずれかに
+// なる場合は、全角スペースを自動挿入しない（括弧自体が字下げの
+// 役割を果たすため）。
 function handleEnterKeyCore(el, caretState) {
-  const val = el.value;
   const start = el.selectionStart;
   const end = el.selectionEnd;
 
-  // start=0のとき、String#lastIndexOf(searchValue, -1)はJSの仕様上
-  // fromIndexが0として扱われるため、val[0]がちょうど改行文字だった
-  // 場合（＝1行目が完全な空行）に、誤って1文字後ろの位置を
-  // 行頭と判定してしまう。start===0は常に行頭そのものなので、
-  // その場合は検索せず直接0とする。
-  const lineStart = start === 0 ? 0 : val.lastIndexOf('\n', start - 1) + 1;
-  let lineEnd = val.indexOf('\n', end);
-  if (lineEnd === -1) lineEnd = val.length;
-  const lineText = val.slice(lineStart, lineEnd);
-
-  const isSpaceOnlyLine = lineText.length > 0 &&
-    [...lineText].every((ch) => ch === FULL_WIDTH_SPACE);
-
-  if (isSpaceOnlyLine) {
-    // 全角スペースだけの行は、行内のどこでEnterしても、その行の
-    // 全角スペースを引き継がずに消す（2つの空行になる。どちらにも
-    // 自動インデントは付けない）。
-    el.setSelectionRange(lineStart, lineEnd);
-    insertTextPreservingUndoCore(el, '\n', caretState);
-    return;
-  }
-
-  let leadingSpaceCount = 0;
-  while (lineText[leadingSpaceCount] === FULL_WIDTH_SPACE) leadingSpaceCount++;
-
-  // カーソルが行頭の全角スペースの中、またはその直後（＝スペースと
-  // 本文の間）にある場合：新たな全角スペースは追加せず、改行だけを
-  // 挿入する。既存の全角スペースの移動・削除も行わない。
-  // （行頭の全角スペースの「前」でEnterした場合と同じ扱いにする。）
-  if (start === end && leadingSpaceCount > 0 && start <= lineStart + leadingSpaceCount) {
-    insertTextPreservingUndoCore(el, '\n', caretState);
-    // 挿入直後の位置から続く全角スペースがあれば、その直後
-    //（本文の入力開始位置）までカーソルを進める。
-    let spaceCount = 0;
-    while (el.value[el.selectionStart + spaceCount] === FULL_WIDTH_SPACE) spaceCount++;
-    const newPos = el.selectionStart + spaceCount;
-    el.setSelectionRange(newPos, newPos);
-    caretState.start = newPos;
-    caretState.end = newPos;
-    return;
+  if (start === end) {
+    const nextChar = el.value[start];
+    if (nextChar === '「' || nextChar === '『' || nextChar === '（') {
+      insertTextPreservingUndoCore(el, '\n', caretState);
+      return;
+    }
   }
 
   insertTextPreservingUndoCore(el, '\n' + FULL_WIDTH_SPACE, caretState);
