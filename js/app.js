@@ -1,0 +1,1696 @@
+const STORAGE_KEY = 'yukemuri_db';
+const FULL_WIDTH_SPACE = '\u3000';
+
+let db = {
+  currentId: null,
+  settings: {},
+  projects: {}
+};
+
+let timerId, autoId;
+let editingProjectId = null;
+
+// 本文・プロットそれぞれのカーソル位置退避用の状態オブジェクト。
+// 「入力ルール（挿入処理・行頭全角スペース処理等）」は共通関数として
+// 本文・プロットの両方から利用するが、カーソル位置の退避先だけは
+// textareaごとに別オブジェクトとして分離し、互いに影響しないようにする。
+const manuscriptCaret = { start: null, end: null };
+const plotCaret = { start: null, end: null };
+
+let saveFailed = false;
+const STORAGE_WARN_THRESHOLD = 4.5 * 1024 * 1024; // 目安5MBに対する警告ライン
+
+function $(id) { return document.getElementById(id); }
+function fmt(n) { return n.toLocaleString('ja-JP'); }
+
+function getFormattedDate() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}${m}${day}`;
+}
+
+function formatDatetimeLocal(d) {
+  if (!d) return '';
+  const dateObj = (d instanceof Date) ? d : new Date(d);
+  if (isNaN(dateObj.getTime())) return '';
+  const pad = n => String(n).padStart(2, '0');
+  return `${dateObj.getFullYear()}-${pad(dateObj.getMonth() + 1)}T${pad(dateObj.getHours())}:${pad(dateObj.getMinutes())}`;
+}
+
+function formatDisplayDate(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return '';
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function formatUpdatedAt(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return '';
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function generateProjectId() {
+  if (!db.nextProjectNum) {
+    db.nextProjectNum = Object.keys(db.projects).length + 1;
+  }
+  const id = 'id' + String(db.nextProjectNum).padStart(4, '0');
+  db.nextProjectNum++;
+  return id;
+}
+
+// 作品の恒久的識別子（projectUid）。環境をまたいでも変更しない。
+// ローカルの id（generateProjectIdで発行）とは別物で、
+// JSON書き出し・読み込みの同一性判定に使用する。
+function generateProjectUid() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'uid-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+
+// 既存作品（旧データ）で projectUid を持たないものへ、後付けで付与する。
+// ユーザー操作は不要。付与後は恒久的な識別子として維持する。
+function ensureProjectUids() {
+  let changed = false;
+  Object.keys(db.projects || {}).forEach(id => {
+    const p = db.projects[id];
+    if (p && !p.projectUid) {
+      p.projectUid = generateProjectUid();
+      changed = true;
+    }
+  });
+  return changed;
+}
+
+function ensureProjectOrder() {
+  const ids = Object.keys(db.projects);
+  if (!Array.isArray(db.projectOrder)) {
+    db.projectOrder = ids.slice().sort((a, b) => (db.projects[b].updatedAt || 0) - (db.projects[a].updatedAt || 0));
+    return;
+  }
+  db.projectOrder = db.projectOrder.filter(id => db.projects[id]);
+  ids.forEach(id => {
+    if (!db.projectOrder.includes(id)) {
+      db.projectOrder.unshift(id);
+    }
+  });
+}
+
+function getOrderedProjects() {
+  ensureProjectOrder();
+  return db.projectOrder.map(id => db.projects[id]).filter(Boolean);
+}
+
+function moveProject(id, direction, event) {
+  if(event) event.stopPropagation();
+  ensureProjectOrder();
+  const idx = db.projectOrder.indexOf(id);
+  if (idx === -1) return;
+  const newIdx = idx + direction;
+  if (newIdx < 0 || newIdx >= db.projectOrder.length) return;
+  [db.projectOrder[idx], db.projectOrder[newIdx]] = [db.projectOrder[newIdx], db.projectOrder[idx]];
+  saveData();
+  renderProjectList();
+}
+
+const FONT_STACKS = {
+  gothic: 'var(--font-gothic)',
+  meiryo: 'Meiryo,sans-serif',
+  yugothic: '"Yu Gothic",sans-serif',
+  mincho: '"Hiragino Mincho ProN","Yu Mincho",serif'
+};
+const DEFAULT_MANUSCRIPT_FONT_SIZE = 17;
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      db = JSON.parse(raw);
+      if (!db.settings) db.settings = {};
+      checkStorageCapacity(raw);
+    }
+  } catch(e) {}
+  const migrated = ensureProjectUids();
+  if (migrated) saveData();
+  applyManuscriptStyle();
+}
+
+function applyManuscriptStyle() {
+  const el = $('js-manuscript');
+  if (!el) return;
+  const key = db.settings?.manuscriptFont || 'gothic';
+  const size = db.settings?.manuscriptFontSize || DEFAULT_MANUSCRIPT_FONT_SIZE;
+  el.style.fontFamily = FONT_STACKS[key] || FONT_STACKS.gothic;
+  el.style.fontSize = size + 'px';
+}
+
+function showFontSettings() {
+  const key = db.settings?.manuscriptFont || 'gothic';
+  const size = db.settings?.manuscriptFontSize || DEFAULT_MANUSCRIPT_FONT_SIZE;
+  $('js-font-family-select').value = key;
+  $('js-font-size-range').value = size;
+  $('js-font-size-value').textContent = size + 'px';
+  $('js-font-settings-overlay').classList.remove('hidden');
+  openModalWithFocusTrap($('js-font-settings-overlay'));
+}
+
+function hideFontSettings() {
+  applyManuscriptStyle();
+  $('js-font-settings-overlay').classList.add('hidden');
+  closeModalRestoreFocus();
+}
+
+function previewFontSettings() {
+  const key = $('js-font-family-select').value;
+  const size = $('js-font-size-range').value;
+  $('js-font-size-value').textContent = size + 'px';
+  const el = $('js-manuscript');
+  if (el) {
+    el.style.fontFamily = FONT_STACKS[key] || FONT_STACKS.gothic;
+    el.style.fontSize = size + 'px';
+  }
+}
+
+function saveFontSettings() {
+  if (!db.settings) db.settings = {};
+  db.settings.manuscriptFont = $('js-font-family-select').value;
+  db.settings.manuscriptFontSize = Number($('js-font-size-range').value);
+  saveData();
+  applyManuscriptStyle();
+  $('js-font-settings-overlay').classList.add('hidden');
+  closeModalRestoreFocus();
+  toast('文字設定を保存しました');
+}
+
+function saveData() {
+  if (db.currentId && db.projects[db.currentId]) {
+    const p = db.projects[db.currentId];
+    const writeVisible = !$('js-write').classList.contains('hidden');
+    if (writeVisible) {
+      const prevText = p.text;
+      const prevPlot = p.plot;
+      const nextText = $('js-manuscript')?.value ?? p.text;
+      const nextPlot = $('js-plot-work')?.value ?? p.plot;
+      p.text = nextText;
+      p.plot = nextPlot;
+      // updatedAtは「作品内容が最後に実際に変更された日時」を表すため、
+      // 本文・プロットが実際に変化した場合のみ更新する（開いただけ／自動保存だけでは進めない）。
+      if (nextText !== prevText || nextPlot !== prevPlot) {
+        p.updatedAt = Date.now();
+      }
+    }
+  }
+
+  const serialized = JSON.stringify(db);
+
+  try {
+    localStorage.setItem(STORAGE_KEY, serialized);
+    if (saveFailed) {
+      saveFailed = false;
+      setBackupUrgent(false);
+    }
+    if ($('js-saved')) {
+      $('js-saved').textContent = '自動保存: ' + new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+      $('js-saved').classList.remove('save-warning');
+    }
+  } catch (err) {
+    handleSaveFailure(err);
+  }
+
+  checkStorageCapacity(serialized);
+}
+
+function handleSaveFailure(err) {
+  console.error('localStorage保存エラー:', err);
+  const alreadyWarned = saveFailed;
+  saveFailed = true;
+
+  if ($('js-saved')) {
+    $('js-saved').textContent = '⚠ 保存できていません（容量オーバーの可能性）';
+    $('js-saved').classList.add('save-warning');
+  }
+  setBackupUrgent(true);
+
+  if (!alreadyWarned) {
+    alert(
+      'データの保存に失敗しました。ブラウザの保存容量が上限に達っている可能性があります。\n\n' +
+      '今書いている内容は、この画面を閉じたりリロードしたりしなければメモリ上にはまだ残っています。\n' +
+      '今すぐ「作品データ管理」または「書き出し／読み込み」で書き出しておくことを強くおすすめします。'
+    );
+  }
+}
+
+function setBackupUrgent(isUrgent) {
+  document.querySelectorAll('.backup-btn').forEach(btn => {
+    btn.classList.toggle('backup-urgent', isUrgent);
+  });
+}
+
+function checkStorageCapacity(serialized) {
+  const bytes = new Blob([serialized]).size;
+  const show = bytes >= STORAGE_WARN_THRESHOLD;
+  const mb = (bytes / (1024 * 1024)).toFixed(1);
+  const msg = `⚠ 保存容量が目安に近づいています（約${mb}MB）。バックアップの取得をおすすめします`;
+
+  ['js-storage-warning', 'js-storage-warning-write'].forEach(id => {
+    const el = $(id);
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.toggle('hidden', !show);
+  });
+}
+
+function showNewProjectModal() {
+  editingProjectId = null;
+  const now = new Date();
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+  $('js-modal-ttl').textContent = '新規ご宿泊プランの作成';
+  $('js-save-project-btn').textContent = '原稿合宿を開始';
+  $('js-modal-project-id').classList.add('hidden');
+  $('js-new-ttl').value = '';
+  $('js-new-goal').value = 10000;
+  $('js-new-check-in').value = formatDatetimeLocal(now);
+  $('js-new-check-out').value = formatDatetimeLocal(tomorrow);
+  $('js-new-plot').value = '';
+  $('js-new-project-overlay').classList.remove('hidden');
+  openModalWithFocusTrap($('js-new-project-overlay'));
+}
+
+function showEditProjectModal(id, event) {
+  if(event) event.stopPropagation();
+  const p = db.projects[id];
+  if (!p) return;
+
+  editingProjectId = id;
+  $('js-modal-ttl').textContent = 'プラン情報の編集';
+  $('js-save-project-btn').textContent = '変更内容を保存';
+  $('js-modal-project-id').textContent = 'ID: ' + (p.id ? p.id.replace(/^id/, '') : '----');
+  $('js-modal-project-id').classList.remove('hidden');
+  $('js-new-ttl').value = p.title || '';
+  $('js-new-goal').value = p.goal || 10000;
+  $('js-new-check-in').value = formatDatetimeLocal(p.checkIn);
+  $('js-new-check-out').value = formatDatetimeLocal(p.checkOut);
+  $('js-new-plot').value = p.plot || '';
+  $('js-new-project-overlay').classList.remove('hidden');
+  openModalWithFocusTrap($('js-new-project-overlay'));
+}
+
+function hideNewProjectModal() {
+  $('js-new-project-overlay').classList.add('hidden');
+  editingProjectId = null;
+  closeModalRestoreFocus();
+}
+
+function saveProjectModal() {
+  const titleInput = $('js-new-ttl');
+  const rawTitle = titleInput ? titleInput.value : '';
+  const title = rawTitle.trim() || '無題の作品';
+
+  const goalInput = $('js-new-goal');
+  const goal = Math.max(1, Number(goalInput ? goalInput.value : 10000) || 10000);
+
+  const checkIn = $('js-new-check-in') ? $('js-new-check-in').value : '';
+  const checkOut = $('js-new-check-out') ? $('js-new-check-out').value : '';
+  const plot = $('js-new-plot') ? $('js-new-plot').value : '';
+
+  if (editingProjectId && db.projects[editingProjectId]) {
+    const p = db.projects[editingProjectId];
+    p.title = title;
+    p.goal = goal;
+    p.checkIn = checkIn;
+    p.checkOut = checkOut;
+    p.plot = plot;
+    p.updatedAt = Date.now();
+
+    if (db.currentId === editingProjectId && !$('js-write').classList.contains('hidden')) {
+      $('js-room-ttl-display').textContent = title;
+      $('js-goal-view').textContent = fmt(goal);
+      $('js-plot-work').value = plot;
+      updateTimer();
+      update();
+    }
+
+    saveData();
+    hideNewProjectModal();
+    renderProjectList();
+    toast('プラン内容を保存しました');
+  } else {
+    const id = generateProjectId();
+    db.projects[id] = {
+      projectUid: generateProjectUid(),
+      id: id,
+      title: title,
+      goal: goal,
+      checkIn: checkIn,
+      checkOut: checkOut,
+      plot: plot,
+      text: '',
+      elapsedTime: 0,
+      lastMilestone: 0,
+      updatedAt: Date.now()
+    };
+    ensureProjectOrder();
+    db.projectOrder = db.projectOrder.filter(pid => pid !== id);
+    db.projectOrder.unshift(id);
+
+    hideNewProjectModal();
+    openProject(id);
+    toast('チェックインしました！');
+  }
+}
+
+function deleteProject(id, event) {
+  if(event) event.stopPropagation();
+  const p = db.projects[id];
+  if (!p) return;
+  if (confirm(`「${p.title}」を削除しますか？`)) {
+    delete db.projects[id];
+    if (Array.isArray(db.projectOrder)) {
+      db.projectOrder = db.projectOrder.filter(pid => pid !== id);
+    }
+    if (db.currentId === id) {
+      const remainingIds = Object.keys(db.projects);
+      db.currentId = remainingIds.length > 0 ? remainingIds[0] : null;
+    }
+    saveData();
+    renderProjectList();
+    toast('データを削除しました');
+  }
+}
+
+// 作品の複製。元の作品(id)は一切変更せず、同じ内容（同じタイトルを含む）を持つ
+// 新しい作品を、新しいid・新しいprojectUidで作品一覧に追加する。複製先は自動的に開かない。
+// 現在表示中の画面・db.currentIdにも影響を与えない。
+function duplicateProject(id, event) {
+  if (event) event.stopPropagation();
+  const source = db.projects[id];
+  if (!source) return;
+
+  const newId = generateProjectId();
+  db.projects[newId] = {
+    projectUid: generateProjectUid(),
+    id: newId,
+    title: source.title,
+    goal: source.goal,
+    checkIn: source.checkIn,
+    checkOut: source.checkOut,
+    plot: source.plot,
+    text: source.text,
+    elapsedTime: source.elapsedTime,
+    lastMilestone: source.lastMilestone,
+    // updatedAtは「原稿またはプロットの内容が最後に変更された時刻」であり、
+    // 複製操作を行った時刻ではない。複製元と内容は完全に同一なので、
+    // 複製元のupdatedAtをそのまま引き継ぐ（値がない旧データ等はDate.now()にフォールバック）。
+    updatedAt: source.updatedAt || Date.now()
+  };
+
+  ensureProjectOrder();
+  db.projectOrder = db.projectOrder.filter(pid => pid !== newId);
+  db.projectOrder.unshift(newId);
+
+  saveData();
+  renderProjectList();
+  toast('作品を複製しました');
+}
+
+function renderProjectList() {
+  const container = $('js-project-list');
+  container.innerHTML = '';
+
+  const list = getOrderedProjects();
+
+  if (list.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        ご滞在中のプランがありません。<br>右上ボタンの「＋ 新規プラン作成」からチェックインしてください。
+      </div>
+    `;
+    return;
+  }
+
+  list.forEach((p, index) => {
+    const count = countText(p.text || '');
+    const item = document.createElement('div');
+    item.className = 'project-item';
+    item.id = `proj_item_${p.id}`;
+
+    const inStr = p.checkIn ? formatDisplayDate(p.checkIn) : '未設定';
+    const outStr = p.checkOut ? formatDisplayDate(p.checkOut) : '未設定';
+    const updatedStr = p.updatedAt ? formatUpdatedAt(p.updatedAt) : '未更新';
+    const progressPercent = p.goal ? Math.floor(count / p.goal * 100) : 0;
+    const progressBarPercent = Math.min(100, progressPercent);
+
+    item.innerHTML = `
+      <div class="reorder-actions" onclick="event.stopPropagation()">
+        <button class="reorder-btn" onclick="moveProject('${p.id}', -1, event)" ${index === 0 ? 'disabled' : ''} title="上へ移動">▲</button>
+        <button class="reorder-btn" onclick="moveProject('${p.id}', 1, event)" ${index === list.length - 1 ? 'disabled' : ''} title="下へ移動">▼</button>
+      </div>
+
+      <div class="project-main-click" onclick="openProject('${p.id}')">
+        <div class="project-id-text">ID: ${p.id.replace(/^id/, '')}</div>
+        <div class="project-header-row">
+          <h3 class="project-title-text">${escapeHtml(p.title)}</h3>
+          <div class="project-stay-badge">
+            <span>滞在:</span>
+            <span class="datetime">${inStr} 〜 ${outStr}</span>
+          </div>
+        </div>
+
+        <div class="project-progress-wrapper">
+          <div class="project-progress-bar-bg">
+            <div class="project-progress-bar-fill" style="width: ${progressBarPercent}%;"></div>
+          </div>
+          <div class="project-meta-text">
+            <span><b>${fmt(count)}</b> / ${fmt(p.goal)} 字 (${progressPercent}%)</span>
+            <span>最終更新 ${updatedStr}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="project-actions" onclick="event.stopPropagation()">
+        <button class="secondary" onclick="showEditProjectModal('${p.id}', event)">編集</button>
+        <button class="secondary" onclick="duplicateProject('${p.id}', event)">複製</button>
+        <button class="danger-icon" onclick="deleteProject('${p.id}', event)" title="削除">✕</button>
+      </div>
+    `;
+    container.appendChild(item);
+  });
+}
+
+function escapeHtml(str) {
+  return str.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+function openProject(id) {
+  commitSessionTime();
+  clearInterval(timerId);
+  clearInterval(autoId);
+  sessionStartTime = null;
+
+  const p = db.projects[id];
+  if (!p) return;
+
+  db.currentId = id;
+
+  if (p.text === FULL_WIDTH_SPACE) p.text = '';
+
+  $('js-room-ttl-display').textContent = p.title || '無題';
+  $('js-room-ttl-display').classList.remove('expanded');
+  $('js-goal-view').textContent = fmt(p.goal || 10000);
+  if ($('js-current-project-id')) $('js-current-project-id').textContent = 'ID: ' + (p.id ? p.id.replace(/^id/, '') : '----');
+  $('js-manuscript').value = p.text || '';
+  $('js-plot-work').value = p.plot || '';
+  const currentCount = countText($('js-manuscript').value);
+  $('js-count').textContent = fmt(currentCount);
+  $('js-percent').textContent = Math.floor(currentCount / Math.max(1, p.goal || 10000) * 100) + '%';
+
+  $('js-lobby').classList.add('hidden');
+  $('js-write').classList.remove('hidden');
+
+  startClocks();
+  saveData();
+}
+
+function showProjectList() {
+  commitSessionTime();
+  clearInterval(timerId);
+  clearInterval(autoId);
+  sessionStartTime = null;
+  saveData();
+  renderProjectList();
+  $('js-write').classList.add('hidden');
+  $('js-lobby').classList.remove('hidden');
+}
+
+let sessionStartTime = null;
+
+function startClocks() {
+  clearInterval(timerId);
+  clearInterval(autoId);
+  sessionStartTime = Date.now();
+
+  timerId = setInterval(updateTimer, 1000);
+  autoId = setInterval(() => {
+    commitSessionTime();
+    saveData();
+  }, 15000);
+  updateTimer();
+}
+
+function updateTimer() {
+  if (!db.currentId || !db.projects[db.currentId] || !sessionStartTime) return;
+  const p = db.projects[db.currentId];
+
+  const currentSessionSec = Math.floor((Date.now() - sessionStartTime) / 1000);
+  const totalSec = (p.elapsedTime || 0) + currentSessionSec;
+
+  const h = String(Math.floor(totalSec / 3600)).padStart(2, '0');
+  const m = String(Math.floor(totalSec % 3600 / 60)).padStart(2, '0');
+  const sec = String(totalSec % 60).padStart(2, '0');
+  $('js-timer').textContent = `${h}:${m}:${sec}`;
+
+  const countdown = $('js-checkout-countdown');
+  const container = $('js-checkout-countdown-container');
+  if (!countdown || !container) return;
+
+  if (p.checkOut) {
+    const target = new Date(p.checkOut).getTime();
+    const diff = target - Date.now();
+
+    if (isNaN(target)) {
+      container.classList.add('hidden');
+      return;
+    }
+
+    container.classList.remove('hidden');
+
+    if (diff <= 0) {
+      countdown.textContent = '超過';
+      countdown.style.color = 'var(--danger-btn)';
+    } else {
+      const remSec = Math.floor(diff / 1000);
+      const rh = String(Math.floor(remSec / 3600)).padStart(2, '0');
+      const rm = String(Math.floor((remSec % 3600) / 60)).padStart(2, '0');
+      const rs = String(remSec % 60).padStart(2, '0');
+      countdown.textContent = `${rh}:${rm}:${rs}`;
+
+      if (diff <= 30 * 60 * 1000) {
+        countdown.style.color = 'var(--danger-btn)';
+      } else if (diff <= 60 * 60 * 1000) {
+        countdown.style.color = 'var(--warning-btn)';
+      } else {
+        countdown.style.color = 'var(--ink)';
+      }
+    }
+  } else {
+    container.classList.add('hidden');
+  }
+}
+
+function commitSessionTime() {
+  if (!sessionStartTime || !db.currentId || !db.projects[db.currentId]) return;
+  const elapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+  if (elapsed > 0) {
+    db.projects[db.currentId].elapsedTime = (db.projects[db.currentId].elapsedTime || 0) + elapsed;
+  }
+  sessionStartTime = Date.now();
+}
+
+function saveNow() {
+  commitSessionTime();
+  saveData();
+  toast('原稿を保存しました');
+}
+
+// 「␣掃除」：本文専用。全角・半角スペースを同じ「スペース」として扱い、
+// ・スペースだけで構成された行 → 完全な空行にする
+// ・各行の末尾にある全角・半角スペース → 削除する
+// のみを行う。行頭のスペース・行途中のスペース・文章内容は一切変更しない
+//（字下げの追加・救済は行わない）。プロットには追加しない（本文のみ）。
+// 既に掃除済みの内容に対して実行しても変化しないよう、変化がない場合は
+// 何もしない。
+function cleanupManuscriptSpaces() {
+  const el = $('js-manuscript');
+  if (!el) return;
+
+  const isSpaceChar = (ch) => ch === FULL_WIDTH_SPACE || ch === ' ';
+
+  const cleanedLines = el.value.split('\n').map((line) => {
+    if (line.length > 0 && [...line].every(isSpaceChar)) {
+      return '';
+    }
+    let end = line.length;
+    while (end > 0 && isSpaceChar(line[end - 1])) end--;
+    return line.slice(0, end);
+  });
+
+  const newValue = cleanedLines.join('\n');
+  if (newValue === el.value) {
+    toast('スペースはありませんでした');
+    return;
+  }
+
+  el.focus();
+  el.setSelectionRange(0, el.value.length);
+  insertTextPreservingUndoCore(el, newValue, manuscriptCaret);
+
+  update();
+  saveData();
+  toast('␣掃除を実行しました');
+}
+
+// キャレット（カーソル）の実際のピクセル位置を、隠しミラー要素で計測し、
+// 表示範囲外にある場合だけ必要最小限スクロールする。
+// 「常に最下部までスクロール」ではなく、実際のカーソル位置を考慮する。
+function scrollTextareaToCaret(el) {
+  const caretIndex = el.selectionStart;
+  const style = window.getComputedStyle(el);
+
+  const mirror = document.createElement('div');
+  const props = [
+    'boxSizing', 'width', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+    'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+    'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'wordSpacing',
+    'textTransform', 'textIndent', 'textAlign'
+  ];
+  props.forEach(p => { mirror.style[p] = style[p]; });
+  mirror.style.position = 'absolute';
+  mirror.style.visibility = 'hidden';
+  mirror.style.whiteSpace = 'pre-wrap';
+  mirror.style.wordWrap = 'break-word';
+  mirror.style.top = '0';
+  mirror.style.left = '-9999px';
+  mirror.style.height = 'auto';
+
+  mirror.appendChild(document.createTextNode(el.value.substring(0, caretIndex)));
+  const marker = document.createElement('span');
+  marker.textContent = '\u200b';
+  mirror.appendChild(marker);
+  mirror.appendChild(document.createTextNode(el.value.substring(caretIndex) || '.'));
+
+  document.body.appendChild(mirror);
+  const markerTop = marker.offsetTop;
+  const markerHeight = marker.offsetHeight || parseFloat(style.lineHeight) || 24;
+  document.body.removeChild(mirror);
+
+  const paddingTop = parseFloat(style.paddingTop) || 0;
+  const paddingBottom = parseFloat(style.paddingBottom) || 0;
+  const visibleTop = el.scrollTop;
+  const visibleBottom = el.scrollTop + el.clientHeight - paddingTop - paddingBottom;
+
+  if (markerTop < visibleTop) {
+    el.scrollTop = markerTop;
+  } else if (markerTop + markerHeight > visibleBottom) {
+    el.scrollTop = markerTop + markerHeight - el.clientHeight + paddingTop + paddingBottom;
+  }
+}
+
+function countText(t) {
+  return t.split('\n').reduce((total, line) => {
+    return total + [...line].length;
+  }, 0);
+}
+
+function update() {
+  if (!db.currentId || !db.projects[db.currentId]) return;
+  const p = db.projects[db.currentId];
+  const n = countText($('js-manuscript').value);
+  const g = Math.max(1, p.goal || 10000);
+
+  $('js-count').textContent = fmt(n);
+  $('js-percent').textContent = Math.floor(n / g * 100) + '%';
+}
+
+// ============================================================
+// 共通入力ルール（本文・プロット共通の基本操作）
+// ============================================================
+// Enterの改行＋行頭全角スペース、記号／括弧挿入、行頭全角スペースの
+// 扱い（A/B/C）、Undo/Redoは「文章を書くときの基本ルール」として
+// 本文（manuscript）とプロット（plotWork）の両方が共通で利用する。
+//
+// 実際に編集されるtextarea要素と、カーソル位置の退避先
+//（manuscriptCaret / plotCaret）だけを呼び出し側から渡すことで、
+// データ・編集履歴は本文・プロットで独立したまま処理だけを共通化する。
+// なお、Undo/Redoはdocument.execCommandのブラウザ標準履歴を使っており、
+// この履歴はtextarea要素ごとに個別に保持されるため、本文とプロットの
+// 編集履歴は元々自然に分離されている。
+
+// テキストをUndo/Redo可能な形で挿入する共通処理。
+// document.execCommand('insertText', ...)はブラウザの標準Undo履歴に
+// そのまま積まれるため、Ctrl+Z / Cmd+Zが自然に効く。
+// 非対応環境向けにsetRangeTextへのフォールバックも用意する。
+//
+// execCommand実行直後、selectionStart/Endがブラウザ内部でまだ
+// 古い位置のままになっている場合があるため、挿入前の位置と
+// 挿入した文字列の長さから挿入後にあるべき位置を自前で計算し、
+// setSelectionRangeで明示的に確定させる。
+function insertTextPreservingUndoCore(el, text, caretState) {
+  el.focus();
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+  let ok = false;
+  try {
+    ok = document.execCommand('insertText', false, text);
+  } catch (e) {
+    ok = false;
+  }
+  if (!ok) {
+    el.setRangeText(text, start, end, 'end');
+  }
+
+  const expectedPos = start + text.length;
+  if (el.selectionStart !== expectedPos || el.selectionEnd !== expectedPos) {
+    el.setSelectionRange(expectedPos, expectedPos);
+  }
+
+  caretState.start = el.selectionStart;
+  caretState.end = el.selectionEnd;
+}
+
+function saveCaretCore(el, caretState) {
+  if (!el) return;
+  caretState.start = el.selectionStart;
+  caretState.end = el.selectionEnd;
+}
+
+// フォーカスが記号ボタン側へ移っていても、退避しておいたカーソル位置を
+// textareaのselectionRangeへ復元してから後続の処理へ渡す。
+function ensureSelectionCore(el, caretState) {
+  if (!el) return;
+  if (caretState.start !== null && caretState.end !== null) {
+    const max = el.value.length;
+    const start = Math.min(caretState.start, max);
+    const end = Math.min(caretState.end, max);
+    el.setSelectionRange(start, end);
+  }
+}
+
+// 行頭全角スペースの扱い：
+// A. カーソルが行頭の全角スペース位置にある → 削除してから記号／括弧を挿入
+// B. カーソルが文章途中にある → 行頭スペースには触らず、その位置に挿入
+// C. 範囲選択がある → 行頭スペースを勝手に削除しない
+function stripLeadingSpacesAtCursorCore(el, caretState) {
+  if (!el) return false;
+  ensureSelectionCore(el, caretState);
+
+  const val = el.value;
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+
+  if (start !== end) return false;
+
+  const lineStart = val.lastIndexOf('\n', start - 1) + 1;
+
+  let spacesCount = 0;
+  while (val[lineStart + spacesCount] === FULL_WIDTH_SPACE) {
+    spacesCount++;
+  }
+  if (spacesCount === 0) return false;
+
+  if (start > lineStart + spacesCount) return false;
+
+  el.setSelectionRange(lineStart, lineStart + spacesCount);
+  insertTextPreservingUndoCore(el, '', caretState);
+  return true;
+}
+
+// SPでEnter直後に自動挿入された行頭全角スペースだけを、1回の編集コマンドで置換する。
+// 空文字での削除と記号挿入を別々に実行すると、iOS等でネイティブの編集位置が
+// Enter前の行末へ戻ることがあるため、この限定経路では中間コマンドを作らない。
+function replaceAutoIndentOnMobileCore(el, text, caretState) {
+  if (!el) return null;
+
+  const isSP = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  if (!isSP) return null;
+
+  ensureSelectionCore(el, caretState);
+  const val = el.value;
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+  if (start !== end) return null;
+
+  const lineStart = val.lastIndexOf('\n', start - 1) + 1;
+  let spacesCount = 0;
+  while (val[lineStart + spacesCount] === FULL_WIDTH_SPACE) {
+    spacesCount++;
+  }
+  if (spacesCount === 0 || start !== lineStart + spacesCount) return null;
+
+  el.focus();
+  el.setSelectionRange(lineStart, lineStart + spacesCount);
+  let ok = false;
+  try {
+    ok = document.execCommand('insertText', false, text);
+  } catch (e) {
+    ok = false;
+  }
+  if (!ok) return null;
+
+  const endPos = lineStart + text.length;
+  if (el.selectionStart !== endPos || el.selectionEnd !== endPos) {
+    el.setSelectionRange(endPos, endPos);
+  }
+  caretState.start = el.selectionStart;
+  caretState.end = el.selectionEnd;
+  return { lineStart, endPos };
+}
+
+// ――・……は「行頭では全角スペース1個を保証する。文章途中では
+// スペースを追加・削除しない」という記号自体の仕様のため、
+// 他の記号のような行頭全角スペースの削除・置換（stripLeadingSpacesAtCursorCore・
+// replaceAutoIndentOnMobileCore）は使わない。
+//
+// ケース1：行頭（そこにまだ全角スペースが無い。textarea先頭も含む）
+//   → 全角スペースを1個補ってから記号を挿入する
+// ケース2：行頭に既に全角スペースがある（Enter直後など）
+//   → 何も追加・削除せず、現在のカーソル位置にそのまま挿入する
+// ケース3：文章途中
+//   → 何も追加・削除せず、現在のカーソル位置にそのまま挿入する
+function insertSymbolCore(el, symbol, caretState) {
+  if (!el) return;
+
+  ensureSelectionCore(el, caretState);
+
+  const val = el.value;
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+
+  if (start === end) {
+    // start=0のとき、String#lastIndexOf(searchValue, -1)はJSの仕様上
+    // fromIndexが0として扱われるため、val[0]がちょうど改行文字だった
+    // 場合（＝1行目が完全な空行）に、誤って1文字後ろの位置を
+    // 行頭と判定してしまう。start===0は常に行頭そのものなので、
+    // その場合は検索せず直接0とする。
+    const lineStart = start === 0 ? 0 : val.lastIndexOf('\n', start - 1) + 1;
+    const atLineStart = start === lineStart;
+    const hasLeadingSpace = val[lineStart] === FULL_WIDTH_SPACE;
+
+    if (atLineStart && !hasLeadingSpace) {
+      insertTextPreservingUndoCore(el, FULL_WIDTH_SPACE + symbol, caretState);
+      return;
+    }
+  }
+
+  insertTextPreservingUndoCore(el, symbol, caretState);
+}
+
+function insertBracketCore(el, open, close, caretState) {
+  if (!el) return;
+
+  const mobileReplacement = replaceAutoIndentOnMobileCore(el, open + close, caretState);
+  if (mobileReplacement) {
+    const newPos = mobileReplacement.lineStart + open.length;
+    el.setSelectionRange(newPos, newPos);
+    caretState.start = newPos;
+    caretState.end = newPos;
+    return;
+  }
+
+  // --- 従来どおりの動作（PC、またはSPでEnter直後以外の通常挿入） ---
+  stripLeadingSpacesAtCursorCore(el, caretState);
+
+  const currentStart = el.selectionStart;
+  const currentEnd = el.selectionEnd;
+  const selectedText = el.value.substring(currentStart, currentEnd);
+
+  insertTextPreservingUndoCore(el, open + selectedText + close, caretState);
+
+  if (currentStart === currentEnd) {
+    const newPos = currentStart + open.length;
+    el.setSelectionRange(newPos, newPos);
+  } else {
+    el.setSelectionRange(currentStart + open.length, currentStart + open.length + selectedText.length);
+  }
+  caretState.start = el.selectionStart;
+  caretState.end = el.selectionEnd;
+}
+
+// Enterキー処理：改行＋行頭全角スペース。本文・プロット共通の基本ルール。
+// 現在の行・前の行にある既存のスペースは削除・変更しない
+// （空行に全角スペースが残ること、連続Enterで空行が積み重なることは
+//  仕様として許容する）。
+// ただし、Enterによって新しくできる行の先頭が「『（のいずれかに
+// なる場合は、全角スペースを自動挿入しない（括弧自体が字下げの
+// 役割を果たすため）。
+function handleEnterKeyCore(el, caretState) {
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+
+  if (start === end) {
+    const nextChar = el.value[start];
+    if (nextChar === '「' || nextChar === '『' || nextChar === '（') {
+      insertTextPreservingUndoCore(el, '\n', caretState);
+      return;
+    }
+  }
+
+  insertTextPreservingUndoCore(el, '\n' + FULL_WIDTH_SPACE, caretState);
+}
+
+function undoCore(el) {
+  if (!el) return;
+  el.focus();
+  try { document.execCommand('undo'); } catch (e) {}
+}
+
+function redoCore(el) {
+  if (!el) return;
+  el.focus();
+  try { document.execCommand('redo'); } catch (e) {}
+}
+
+// ------------------------------------------------------------
+// 記号バー操作の共通処理。
+// 記号バー（.symbol-bar）はDOM上に1個だけ存在し、本文編集中は
+// #js-write側に、プロット編集中は#js-plot-overlay側へJS（showPlot/hidePlot）
+// が一時的に移動して使い回す。
+// ボタンが押された時点でプロットPOPUPが開いているかどうかから
+// 「現在の入力対象」を判定し、対応するtextarea・キャレット状態・
+// 保存処理だけを使い分ける。textarea自体・データ・Undo/Redo履歴・
+// キャレット状態は、本文（manuscript / manuscriptCaret）とプロット
+// （plotWork / plotCaret）で分離したまま変えていない。
+// ------------------------------------------------------------
+
+function activeEditorContext() {
+  const plotOverlay = $('js-plot-overlay');
+  const plotOpen = plotOverlay && !plotOverlay.classList.contains('hidden');
+  if (plotOpen) {
+    return { el: $('js-plot-work'), caret: plotCaret, isPlot: true };
+  }
+  return { el: $('js-manuscript'), caret: manuscriptCaret, isPlot: false };
+}
+
+function saveManuscriptCaret() {
+  saveCaretCore($('js-manuscript'), manuscriptCaret);
+}
+
+function insertSymbolShared(symbol) {
+  const ctx = activeEditorContext();
+  if (!ctx.el) return;
+  insertSymbolCore(ctx.el, symbol, ctx.caret);
+  if (!ctx.isPlot) update();
+  saveData();
+}
+
+function insertBracketShared(open, close) {
+  const ctx = activeEditorContext();
+  if (!ctx.el) return;
+  insertBracketCore(ctx.el, open, close, ctx.caret);
+  if (!ctx.isPlot) update();
+  saveData();
+}
+
+function undoShared() {
+  undoCore(activeEditorContext().el);
+}
+
+function redoShared() {
+  redoCore(activeEditorContext().el);
+}
+
+// --- Tabキー制御：通常画面の完全ループ ＋ モーダルのフォーカストラップ ---
+
+const MODAL_IDS = ['js-font-settings-overlay', 'js-plot-overlay', 'js-new-project-overlay', 'js-json-menu-overlay', 'js-import-conflict-overlay'];
+let modalPreviousFocus = null;
+
+function getOpenModalElement() {
+  for (const id of MODAL_IDS) {
+    const el = $(id);
+    if (el && !el.classList.contains('hidden')) return el;
+  }
+  return null;
+}
+
+function getFocusableIn(container) {
+  return Array.from(container.querySelectorAll('button, [href], input, select, textarea, [tabindex]'))
+    .filter(el => !el.disabled && el.tabIndex !== -1 && el.offsetParent !== null);
+}
+
+function getMainScreenTabOrder() {
+  const writeEl = $('js-write');
+  if (!writeEl) return [];
+  return Array.from(writeEl.querySelectorAll('[tabindex]'))
+    .filter(el => !el.disabled && el.offsetParent !== null)
+    .sort((a, b) => Number(a.getAttribute('tabindex')) - Number(b.getAttribute('tabindex')));
+}
+
+function openModalWithFocusTrap(modalEl, focusFirst = true) {
+  modalPreviousFocus = document.activeElement;
+  if (focusFirst) {
+    const focusables = getFocusableIn(modalEl);
+    if (focusables.length) focusables[0].focus();
+  }
+}
+function closeModalRestoreFocus() {
+  const toFocus = modalPreviousFocus;
+  modalPreviousFocus = null;
+  if (toFocus && typeof toFocus.focus === 'function' && toFocus.offsetParent !== null) {
+    toFocus.focus();
+  }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Tab') return;
+
+  const openModal = getOpenModalElement();
+
+  if (openModal) {
+    const focusables = getFocusableIn(openModal);
+    if (focusables.length === 0) return;
+    const idx = focusables.indexOf(document.activeElement);
+    e.preventDefault();
+    let nextIdx;
+    if (idx === -1) {
+      nextIdx = e.shiftKey ? focusables.length - 1 : 0;
+    } else if (e.shiftKey) {
+      nextIdx = (idx === 0) ? focusables.length - 1 : idx - 1;
+    } else {
+      nextIdx = (idx === focusables.length - 1) ? 0 : idx + 1;
+    }
+    focusables[nextIdx].focus();
+    return;
+  }
+
+  if (!$('js-write') || $('js-write').classList.contains('hidden')) return;
+
+  const els = getMainScreenTabOrder();
+  if (els.length === 0) return;
+  const idx = els.indexOf(document.activeElement);
+  e.preventDefault();
+  let nextIdx;
+  if (idx === -1) {
+    nextIdx = e.shiftKey ? els.length - 1 : 0;
+  } else if (e.shiftKey) {
+    nextIdx = (idx === 0) ? els.length - 1 : idx - 1;
+  } else {
+    nextIdx = (idx === els.length - 1) ? 0 : idx + 1;
+  }
+  els[nextIdx].focus();
+});
+
+function toggleTitleExpand() {
+  $('js-room-ttl-display').classList.toggle('expanded');
+}
+
+function savePlotCaret() {
+  saveCaretCore($('js-plot-work'), plotCaret);
+}
+
+function showPlot() {
+  if (db.currentId && db.projects[db.currentId]) {
+    $('js-plot-work').value = db.projects[db.currentId].plot || '';
+  }
+
+  // 共通の記号バー（DOM上に1個だけ存在する）を、プロットの
+  // textareaの直後へ一時的に移動する。ボタンやイベントリスナーは
+  // 同じ要素のまま維持されるため、複製・再生成は発生しない。
+  const bar = document.querySelector('.symbol-bar');
+  const plotTextarea = $('js-plot-work');
+  if (bar && plotTextarea) {
+    plotTextarea.insertAdjacentElement('afterend', bar);
+  }
+
+  $('js-plot-overlay').classList.remove('hidden');
+  openModalWithFocusTrap($('js-plot-overlay'));
+}
+function hidePlot() {
+  // 共通の記号バーを本文側（.editor-footerの先頭）へ戻す。
+  const bar = document.querySelector('.symbol-bar');
+  const editorFooter = document.querySelector('.editor-footer');
+  if (bar && editorFooter) {
+    editorFooter.prepend(bar);
+  }
+
+  $('js-plot-overlay').classList.add('hidden');
+  closeModalRestoreFocus();
+}
+function savePlot() {
+  if (db.currentId && db.projects[db.currentId]) {
+    db.projects[db.currentId].plot = $('js-plot-work').value;
+    saveData();
+  }
+  hidePlot();
+  toast('プロットを保存しました');
+}
+
+function exportTxt() {
+  saveNow();
+  if (!db.currentId || !db.projects[db.currentId]) return;
+
+  const p = db.projects[db.currentId];
+  const dateStr = getFormattedDate();
+  const fileName = `${p.id}_${dateStr}.txt`;
+
+  const rawText = p.text || '';
+
+  const body = `${p.title || '無題'}\n\n${rawText}\n`;
+
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([body], { type: 'plain/text;charset=utf-8' }));
+  a.download = fileName;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  toast('原稿を書き出しました');
+}
+
+// ============================================================
+// JSON 入出力（全データバックアップ／復元　と　作品単位の書き出し／読み込み）
+// ============================================================
+// 「全データバックアップ／復元」と「作品単位の持ち運び」は別物として扱う。
+// type/バージョンをJSON内部に持たせ、アプリ名称には依存しない汎用名にする。
+const FULL_BACKUP_TYPE = 'full-backup';
+const FULL_BACKUP_VERSION = 1;
+const PROJECT_JSON_TYPE = 'project';
+const PROJECT_JSON_VERSION = 1;
+
+function downloadBlob(blob, fileName) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = fileName;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function shareOrDownloadJson(dataStr, fileName, shareLabel, downloadLabel) {
+  const blob = new Blob([dataStr], { type: 'application/json' });
+  const file = new File([blob], fileName, { type: 'application/json' });
+
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    navigator.share({ files: [file], title: fileName })
+      .then(() => toast(shareLabel))
+      .catch(err => {
+        if (err.name !== 'AbortError') downloadBlob(blob, fileName);
+      });
+    return;
+  }
+  downloadBlob(blob, fileName);
+  toast(downloadLabel);
+}
+
+// --- 「JSON」メニュー（作品一覧／執筆画面で内容が異なる） ---
+
+function showJsonMenu(context) {
+  const btnsEl = $('js-json-menu-btns');
+  btnsEl.innerHTML = '';
+
+  const mkBtn = (label, cls, handler) => {
+    const b = document.createElement('button');
+    b.className = cls;
+    b.textContent = label;
+    b.onclick = () => { hideJsonMenu(); handler(); };
+    return b;
+  };
+
+  if (context === 'write') {
+    $('js-json-menu-ttl').textContent = '書き出し／読み込み';
+    btnsEl.appendChild(mkBtn('この作品を書き出す', 'secondary backup-btn', exportCurrentProjectData));
+    btnsEl.appendChild(mkBtn('作品を読み込む', 'secondary', triggerProjectImport));
+  } else {
+    $('js-json-menu-ttl').textContent = '作品データ管理';
+    btnsEl.appendChild(mkBtn('作品を読み込む', 'secondary', triggerProjectImport));
+    btnsEl.appendChild(mkBtn('全データを復元', 'secondary', triggerFullBackupImport));
+    btnsEl.appendChild(mkBtn('全データをバックアップ', 'secondary backup-btn', exportFullBackupData));
+  }
+
+  $('js-json-menu-overlay').classList.remove('hidden');
+  openModalWithFocusTrap($('js-json-menu-overlay'));
+}
+
+function hideJsonMenu() {
+  $('js-json-menu-overlay').classList.add('hidden');
+  closeModalRestoreFocus();
+}
+
+// --- 全データバックアップ／復元 ---
+
+function exportFullBackupData() {
+  const dateStr = getFormattedDate();
+  const fileName = `全作品_バックアップ_${dateStr}.json`;
+  const payload = { type: FULL_BACKUP_TYPE, version: FULL_BACKUP_VERSION, data: db };
+  const dataStr = JSON.stringify(payload, null, 2);
+  shareOrDownloadJson(dataStr, fileName, '全作品のバックアップを共有しました', '全作品のバックアップを出力しました');
+}
+
+function triggerFullBackupImport() {
+  $('js-import-file-input').click();
+}
+
+function handleFullBackupFileImport(event) {
+  commitSessionTime();
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    let parsed;
+    try {
+      parsed = JSON.parse(e.target.result);
+    } catch (err) {
+      alert('ファイルの読み込みに失敗しました。');
+      event.target.value = '';
+      return;
+    }
+
+    let restoredDb = null;
+    if (parsed && parsed.type === FULL_BACKUP_TYPE && parsed.data && typeof parsed.data === 'object') {
+      restoredDb = parsed.data;
+    } else if (parsed && parsed.projects && typeof parsed.projects === 'object') {
+      // 旧形式（type未設定の全データダンプ）との後方互換
+      restoredDb = parsed;
+    }
+
+    if (!restoredDb) {
+      alert('無効なバックアップファイルです。');
+      event.target.value = '';
+      return;
+    }
+
+    if (confirm('全データバックアップファイルの内容で復元します。\n現在ローカル保存中のデータは、すべてバックアップファイルの内容で置き換えられます。復元しますか？')) {
+      db = restoredDb;
+      if (!db.settings) db.settings = {};
+      ensureProjectUids();
+      saveData();
+      renderProjectList();
+      if (!$('js-write').classList.contains('hidden') && db.currentId && db.projects[db.currentId]) {
+        openProject(db.currentId);
+      }
+      toast('データを復元しました');
+    }
+    event.target.value = '';
+  };
+  reader.readAsText(file);
+}
+
+// --- 作品単位の書き出し／読み込み ---
+
+// 個別作品のJSON書き出し。ローカルDB管理用の id は公開せず、projectUid を
+// 作品識別子として含める。ファイル名は自動生成せず、ユーザーが保存時に決められる
+// ようにする（対応環境ではファイル保存ダイアログ、非対応環境では入力欄で確認する）。
+async function exportCurrentProjectData() {
+  if (!db.currentId || !db.projects[db.currentId]) return;
+  saveNow();
+  const p = db.projects[db.currentId];
+
+  const payload = {
+    type: PROJECT_JSON_TYPE,
+    version: PROJECT_JSON_VERSION,
+    project: {
+      projectUid: p.projectUid,
+      title: p.title,
+      goal: p.goal,
+      checkIn: p.checkIn,
+      checkOut: p.checkOut,
+      plot: p.plot,
+      text: p.text,
+      elapsedTime: p.elapsedTime,
+      lastMilestone: p.lastMilestone,
+      updatedAt: p.updatedAt
+    }
+  };
+
+  const dataStr = JSON.stringify(payload, null, 2);
+  const suggestedName = `${(p.title || '無題の作品').replace(/[\\/:*?"<>|]/g, '_')}.json`;
+
+  // 対応ブラウザ（主にPCのChromium系）では、ファイル名・保存先をユーザーが
+  // その場で選べるネイティブの保存ダイアログを使う。上書き確認もブラウザ側に任せる。
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName,
+        types: [{ description: '作品データ', accept: { 'application/json': ['.json'] } }]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(dataStr);
+      await writable.close();
+      toast('作品データを保存しました');
+      return;
+    } catch (err) {
+      if (err && err.name === 'AbortError') return; // ユーザーがキャンセルした場合は何もしない
+      // 保存ダイアログが使えなかった場合は、下のフォールバックへ進む
+    }
+  }
+
+  // 非対応環境（スマートフォン等）では、ファイル名だけは入力してもらい、
+  // 従来どおり共有／ダウンロードする。
+  const fileName = promptExportFileName(suggestedName);
+  if (fileName === null) return; // キャンセル
+  shareOrDownloadJson(dataStr, fileName, '作品データを共有しました', '作品データを保存しました');
+}
+
+function promptExportFileName(suggestedName) {
+  const input = prompt('保存する作品データのファイル名を入力してください', suggestedName);
+  if (input === null) return null;
+  const trimmed = input.trim();
+  if (!trimmed) return suggestedName;
+  return trimmed.toLowerCase().endsWith('.json') ? trimmed : `${trimmed}.json`;
+}
+
+function triggerProjectImport() {
+  $('js-import-project-file-input').click();
+}
+
+// 欠けている項目があっても、可能な範囲で作品データとして復元する（救済ではなく「復元」）。
+function normalizeImportedProject(raw) {
+  return {
+    projectUid: raw.projectUid || null,
+    title: raw.title || '無題の作品',
+    goal: Number(raw.goal) || 10000,
+    checkIn: raw.checkIn || '',
+    checkOut: raw.checkOut || '',
+    plot: raw.plot || '',
+    text: raw.text || '',
+    elapsedTime: Number(raw.elapsedTime) || 0,
+    lastMilestone: Number(raw.lastMilestone) || 0,
+    // 作品一覧に存在する既存作品との同一性判定・新旧比較の参考情報として使用する。
+    // 保存されるデータそのものへは反映しない（updatedAtは置き換え・追加の実行時に現在時刻へ更新する）。
+    updatedAt: Number(raw.updatedAt) || 0
+  };
+}
+
+// 個別作品データの読み込み。作品一覧・執筆画面のどちらから読み込んでも同じ判定・
+// 同じ選択肢になる（db.projects全体を対象にprojectUidで同一性判定する）。
+//
+// A. projectUidを持たない場合（旧形式など）→ 新しいprojectUidを発行し、新規追加して開く。
+// B. projectUidを持つが、作品一覧に同じprojectUidの作品が存在しない場合
+//    → projectUidをそのまま維持して新規追加して開く（環境間の同一性を保つ）。
+// C. projectUidを持ち、作品一覧に同じprojectUidの作品が存在する場合
+//    → 「既存作品を置き換えて開く／別の作品として追加して開く／キャンセル」をユーザーに選ばせる。
+function handleProjectFileImport(event) {
+  commitSessionTime();
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    let parsed;
+    try {
+      parsed = JSON.parse(e.target.result);
+    } catch (err) {
+      alert('ファイルの読み込みに失敗しました。');
+      event.target.value = '';
+      return;
+    }
+
+    let rawProject = null;
+    if (parsed && parsed.type === PROJECT_JSON_TYPE && parsed.project && typeof parsed.project === 'object') {
+      rawProject = parsed.project;
+    } else if (parsed && (parsed.type === FULL_BACKUP_TYPE || (parsed.projects && typeof parsed.projects === 'object'))) {
+      alert('これは全データバックアップのファイルです。\n作品一覧画面の「作品データ管理」→「全データを復元」からお試しください。');
+      event.target.value = '';
+      return;
+    } else if (parsed && typeof parsed === 'object' && ('text' in parsed || 'title' in parsed || 'plot' in parsed)) {
+      // type/projectのラッパーが欠けたファイルからの復元（構造不足時の救済的復元）
+      rawProject = parsed;
+    }
+
+    if (!rawProject) {
+      alert('無効な作品データです。');
+      event.target.value = '';
+      return;
+    }
+
+    const proj = normalizeImportedProject(rawProject);
+
+    const existingId = proj.projectUid
+      ? Object.keys(db.projects).find(id => db.projects[id].projectUid === proj.projectUid)
+      : null;
+
+    if (!existingId) {
+      // A・B：作品一覧に同じprojectUidの作品が存在しない場合は、そのまま新規追加して開く。
+      const newId = createProjectFromImportedData(proj, { keepProjectUid: true });
+      toast('作品データを読み込みました');
+      openProject(newId);
+    } else {
+      // C：作品一覧に同じprojectUidの作品がすでに存在する場合はユーザーに選択させる。
+      showImportChoiceModal(proj, existingId);
+    }
+
+    event.target.value = '';
+  };
+  reader.readAsText(file);
+}
+
+// 読み込んだ作品データ(proj)から、新しいローカルidを持つ作品を作成する。
+// keepProjectUid: true の場合、proj.projectUidがあればそれを維持し、なければ新規発行する。
+// keepProjectUid: false の場合（明示的に別作品として追加する場合）は常に新規projectUidを発行する。
+function createProjectFromImportedData(proj, { keepProjectUid = false } = {}) {
+  const newId = generateProjectId();
+  const newUid = (keepProjectUid && proj.projectUid) ? proj.projectUid : generateProjectUid();
+
+  db.projects[newId] = {
+    projectUid: newUid,
+    id: newId,
+    title: proj.title,
+    goal: proj.goal,
+    checkIn: proj.checkIn,
+    checkOut: proj.checkOut,
+    plot: proj.plot,
+    text: proj.text,
+    elapsedTime: proj.elapsedTime,
+    lastMilestone: proj.lastMilestone,
+    // updatedAtは「原稿またはプロットの内容が最後に変更された時刻」であり、
+    // importを行った時刻ではない。作品内容はimportデータと同一なので、
+    // proj.updatedAt（import JSONに含まれる値）をそのまま維持する。
+    // 旧JSON等でproj.updatedAtが無い場合（normalizeImportedProjectで0になる）は
+    // Date.now()へフォールバックする。
+    updatedAt: proj.updatedAt || Date.now()
+  };
+
+  ensureProjectOrder();
+  db.projectOrder = db.projectOrder.filter(pid => pid !== newId);
+  db.projectOrder.unshift(newId);
+
+  saveData();
+  renderProjectList();
+
+  return newId;
+}
+
+// C：同じprojectUidの作品がすでに作品一覧に存在する場合の3択モーダル。
+// 「新しい方だから自動的に置き換える」のではなく、両者の更新日時を提示したうえでユーザーに選ばせる。
+function showImportChoiceModal(proj, existingId) {
+  const existing = db.projects[existingId];
+  if (!existing) return;
+
+  $('js-import-conflict-msg').textContent =
+    '同じ作品のデータが作品一覧にあります。\n' +
+    `作品一覧側の更新日時：${formatUpdatedAtDisplay(existing.updatedAt)}\n` +
+    `読み込んだ作品の更新日時：${formatUpdatedAtDisplay(proj.updatedAt)}\n` +
+    'どうしますか？';
+
+  const btnsEl = $('js-import-conflict-btns');
+  btnsEl.innerHTML = '';
+
+  const mkBtn = (label, cls, handler) => {
+    const b = document.createElement('button');
+    b.className = cls;
+    b.textContent = label;
+    b.onclick = () => { hideImportConflictModal(); handler(); };
+    return b;
+  };
+
+  btnsEl.appendChild(mkBtn('作品一覧内の既存作品を開く', 'primary', () => openExistingProjectUnchanged(existingId)));
+  btnsEl.appendChild(mkBtn('別の作品として作品一覧に追加して開く', 'secondary', () => addImportedProjectAsSeparateWork(proj)));
+  btnsEl.appendChild(mkBtn('キャンセル', 'secondary', () => {}));
+
+  $('js-import-conflict-overlay').classList.remove('hidden');
+  openModalWithFocusTrap($('js-import-conflict-overlay'));
+}
+
+function hideImportConflictModal() {
+  $('js-import-conflict-overlay').classList.add('hidden');
+  closeModalRestoreFocus();
+}
+
+// 保存日時(ms)を「YYYY/MM/DD HH:MM」形式で表示するためのフォーマッタ。
+function formatUpdatedAtDisplay(ms) {
+  if (!ms) return '不明';
+  const d = new Date(ms);
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${y}/${mo}/${day} ${hh}:${mm}`;
+}
+
+// 「作品一覧内の既存作品を開く」：読み込んだJSON(proj)の内容は一切採用しない。
+// 作品一覧にすでに存在する既存作品(existingId)の本文・設定・メタデータ・updatedAt等は
+// 一切変更せず、applyImportedProjectFields()等の反映処理も呼び出さない。
+// 既存作品をそのままopenProject()するだけの操作。
+function openExistingProjectUnchanged(existingId) {
+  if (!db.projects[existingId]) return;
+  openProject(existingId);
+}
+
+// 「別の作品として新たに作品一覧に追加して開く」：同じprojectUidの作品がすでに存在していても、
+// 明示的に別作品として扱う。新しいid・新しいprojectUidを発行し、既存作品には一切手を加えない。
+function addImportedProjectAsSeparateWork(proj) {
+  const newId = createProjectFromImportedData(proj, { keepProjectUid: false });
+  toast('別の作品として追加しました');
+  openProject(newId);
+}
+
+// projectUid / id は targetId 側（既存の入れ物）のものを維持し、
+// それ以外の作品データを proj（読み込んだ側）の内容で置き換える。
+// 執筆時間（elapsedTime）も合算せず、projの値でそのまま置き換える。
+function applyImportedProjectFields(targetId, proj) {
+  const target = db.projects[targetId];
+  if (!target) return;
+
+  const keepId = target.id;
+  const keepUid = target.projectUid;
+
+  db.projects[targetId] = {
+    projectUid: keepUid,
+    id: keepId,
+    title: proj.title,
+    goal: proj.goal,
+    checkIn: proj.checkIn,
+    checkOut: proj.checkOut,
+    plot: proj.plot,
+    text: proj.text,
+    elapsedTime: proj.elapsedTime,
+    lastMilestone: proj.lastMilestone,
+    updatedAt: Date.now()
+  };
+
+  if (db.currentId === targetId && $('js-write') && !$('js-write').classList.contains('hidden')) {
+    refreshOpenProjectView();
+  }
+
+  saveData();
+  renderProjectList();
+}
+
+// 読み込みによって現在開いている作品の中身が変わった際、画面表示を
+// 更新するための処理。openProject()と異なり、セッションのタイマー
+// 起点（sessionStartTime）や執筆時間の合算はここでは一切行わない。
+function refreshOpenProjectView() {
+  const p = db.projects[db.currentId];
+  if (!p) return;
+
+  if (p.text === FULL_WIDTH_SPACE) p.text = '';
+
+  $('js-room-ttl-display').textContent = p.title || '無題';
+  $('js-room-ttl-display').classList.remove('expanded');
+  $('js-goal-view').textContent = fmt(p.goal || 10000);
+  $('js-manuscript').value = p.text || '';
+  $('js-plot-work').value = p.plot || '';
+
+  // 読み込み前のUndo/Redo履歴を引き継がないため、退避していた
+  // カーソル位置もここで無効化する（stale caretによる不整合を防ぐ）。
+  manuscriptCaret.start = null;
+  manuscriptCaret.end = null;
+  plotCaret.start = null;
+  plotCaret.end = null;
+
+  update();
+  updateTimer();
+}
+
+function toast(t) {
+  const e = $('js-toast');
+  e.textContent = t;
+  e.classList.add('show');
+  setTimeout(() => e.classList.remove('show'), 1800);
+}
+
+$('js-manuscript').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.isComposing) {
+    e.preventDefault();
+    handleEnterKeyCore(e.target, manuscriptCaret);
+    update();
+    saveData();
+    scrollTextareaToCaret(e.target);
+    saveManuscriptCaret();
+  }
+});
+
+$('js-manuscript').addEventListener('keyup', saveManuscriptCaret);
+$('js-manuscript').addEventListener('click', saveManuscriptCaret);
+$('js-manuscript').addEventListener('mouseup', saveManuscriptCaret);
+$('js-manuscript').addEventListener('select', saveManuscriptCaret);
+$('js-manuscript').addEventListener('blur', saveManuscriptCaret);
+
+/* --- プロット入力欄（plotWork）イベント登録 ---
+   Enterの改行＋全角スペースは、本文と同じ共通ルール（handleEnterKeyCore）
+   をそのまま利用する。PC・SPどちらでも本文と同じ動作になる。 */
+$('js-plot-work').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.isComposing) {
+    e.preventDefault();
+    handleEnterKeyCore(e.target, plotCaret);
+    saveData();
+    scrollTextareaToCaret(e.target);
+    savePlotCaret();
+  }
+});
+
+$('js-plot-work').addEventListener('keyup', savePlotCaret);
+$('js-plot-work').addEventListener('click', savePlotCaret);
+$('js-plot-work').addEventListener('mouseup', savePlotCaret);
+$('js-plot-work').addEventListener('select', savePlotCaret);
+$('js-plot-work').addEventListener('blur', savePlotCaret);
+
+$('js-plot-work').addEventListener('input', () => {
+  savePlotCaret();
+  saveData();
+});
+
+
+(function () {
+  const bar = document.querySelector('.symbol-bar');
+  if (!bar) return;
+
+  // 記号バーはDOM上に1個だけであり、本文編集中・プロット編集中の
+  // どちらでも同じ要素が使われる。押された時点での「現在の入力対象」
+  // （activeEditorContext）のキャレット位置を保存しておくことで、
+  // 本文・プロットどちらの操作でも正しい位置に記号が挿入される。
+  bar.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.symbol-btn')) {
+      const ctx = activeEditorContext();
+      saveCaretCore(ctx.el, ctx.caret);
+    }
+  });
+
+  bar.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.symbol-btn')) {
+      e.preventDefault();
+    }
+  });
+})();
+
+$('js-manuscript').addEventListener('input', () => {
+  update();
+  saveData();
+  saveManuscriptCaret();
+});
+
+let maxViewportHeight = 0;
+let appHeightRaf = null;
+
+function updateAppHeight() {
+  if (appHeightRaf !== null) return;
+  appHeightRaf = requestAnimationFrame(() => {
+    appHeightRaf = null;
+    applyAppHeight();
+  });
+}
+
+function applyAppHeight() {
+  const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  document.documentElement.style.setProperty('--app-height', h + 'px');
+
+  const wasKeyboardOpen = document.body.classList.contains('keyboard-open');
+
+  if (!wasKeyboardOpen && h > maxViewportHeight) {
+    maxViewportHeight = h;
+  }
+
+  const shrink = maxViewportHeight - h;
+  const isKeyboardOpen = shrink > 120;
+  document.body.classList.toggle('keyboard-open', isKeyboardOpen);
+
+  if (isKeyboardOpen && (window.scrollX !== 0 || window.scrollY !== 0)) {
+    window.scrollTo(0, 0);
+  }
+}
+updateAppHeight();
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', updateAppHeight);
+  window.visualViewport.addEventListener('scroll', updateAppHeight);
+}
+window.addEventListener('resize', updateAppHeight);
+window.addEventListener('orientationchange', () => {
+  maxViewportHeight = 0;
+  setTimeout(updateAppHeight, 300);
+});
+
+loadData();
+renderProjectList();
